@@ -1,0 +1,10 @@
+export type Role = 'admin' | 'member';
+export type Member = { id: string; name: string; role: Role; initials: string };
+export type BorrowState = 'Requested' | 'Reserved' | 'Borrowed' | 'Ready to return' | 'Returned' | 'Rejected' | 'Cancelled' | 'Lost or damaged';
+export type Activity = { id: string; at: string; actorId: string; kind: string; note?: string; before?: number; after?: number };
+export type Loan = { id: string; borrowerId: string; state: BorrowState; requestedAt: string; dueAt?: string; note?: string };
+export type Item = { id: string; spaceId: string; name: string; kind: 'consumable' | 'returnable'; category: string; location: string; ownerId: string; custodianId?: string; visibility: 'shared' | 'private'; damaged?: boolean; photoUri?: string; quantity?: number; unit?: string; lowThreshold?: number; loan?: Loan; history: Activity[]; testOnly?: boolean };
+export type Space = { id: string; name: string; code: string; memberIds: string[]; adminIds: string[] };
+export type Database = { members: Member[]; spaces: Space[]; items: Item[]; userId: string | null; spaceId: string | null; theme: 'system' | 'light' | 'dark'; notifications: boolean; stressMode?: boolean };
+export type Session = Pick<Database, 'members' | 'userId' | 'spaceId' | 'theme' | 'notifications' | 'stressMode'>;
+export type ItemInput = Pick<Item, 'name' | 'kind' | 'category' | 'location' | 'visibility'> & { photoUri?: string; photoBase64?: string; photoMime?: 'image/jpeg' | 'image/png' | 'image/webp'; quantity?: number; unit?: string; lowThreshold?: number; custodianId?: string };

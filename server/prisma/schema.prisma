@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SpaceRole {
+  admin
+  member
+}
+enum ItemKind {
+  consumable
+  returnable
+}
+enum Visibility {
+  shared
+  private
+}
+enum BorrowState {
+  Requested
+  Reserved
+  Borrowed
+  ReadyToReturn @map("Ready to return")
+  Returned
+  Rejected
+  Cancelled
+  LostOrDamaged @map("Lost or damaged")
+}
+enum Theme {
+  system
+  light
+  dark
+}
+enum ReminderKind {
+  upcoming
+  overdue
+}
+enum DeliveryState {
+  pending
+  sending
+  sent
+  failed
+}
+
+model User {
+  id String @id @db.Uuid
+  name String @default("Member")
+  theme Theme @default(system)
+  notifications Boolean @default(true)
+  timeZone String @default("UTC")
+  selectedSpaceId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  memberships Membership[]
+  ownedItems Item[] @relation("Owner")
+  custodialItems Item[] @relation("Custodian")
+  requests BorrowRequest[] @relation("Borrower")
+  events Activity[]
+  tokens DeviceToken[]
+  reminders Reminder[]
+}
+
+model Space {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  memberships Membership[]
+  items Item[]
+  invites Invite[]
+  audits Audit[]
+}
+
+model Membership {
+  spaceId String @db.Uuid
+  userId String @db.Uuid
+  role SpaceRole @default(member)
+  joinedAt DateTime @default(now()) @db.Timestamptz(3)
+  space Space @relation(fields: [spaceId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+  @@id([spaceId, userId])
+  @@index([userId])
+}
+
+model Invite {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  tokenHash String @unique
+  expiresAt DateTime @db.Timestamptz(3)
+  maxUses Int
+  uses Int @default(0)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdById String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  space Space @relation(fields: [spaceId], references: [id])
+}
+
+model Item {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  ownerId String @db.Uuid
+  custodianId String? @db.Uuid
+  name String
+  kind ItemKind
+  category String
+  location String
+  visibility Visibility
+  photoPath String?
+  quantity Int?
+  unit String?
+  lowThreshold Int?
+  damaged Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  space Space @relation(fields: [spaceId], references: [id])
+  owner User @relation("Owner", fields: [ownerId], references: [id])
+  custodian User? @relation("Custodian", fields: [custodianId], references: [id])
+  requests BorrowRequest[]
+  history Activity[]
+  photoUploads PhotoUpload[]
+  @@index([spaceId, deletedAt, createdAt, id])
+  @@index([spaceId, category])
+  @@index([spaceId, location])
+}
+
+model BorrowRequest {
+  id String @id @default(uuid()) @db.Uuid
+  itemId String @db.Uuid
+  borrowerId String @db.Uuid
+  state BorrowState @default(Requested)
+  requestedAt DateTime @default(now()) @db.Timestamptz(3)
+  dueAt DateTime? @db.Timestamptz(3)
+  note String?
+  closedAt DateTime? @db.Timestamptz(3)
+  item Item @relation(fields: [itemId], references: [id])
+  borrower User @relation("Borrower", fields: [borrowerId], references: [id])
+  reminders Reminder[]
+  @@index([itemId, state, requestedAt])
+  @@index([borrowerId, state])
+}
+
+model Activity {
+  id String @id @default(uuid()) @db.Uuid
+  itemId String @db.Uuid
+  actorId String @db.Uuid
+  kind String
+  note String?
+  before Int?
+  after Int?
+  at DateTime @default(now()) @db.Timestamptz(3)
+  item Item @relation(fields: [itemId], references: [id])
+  actor User @relation(fields: [actorId], references: [id])
+  @@index([itemId, at(sort: Desc), id(sort: Desc)])
+}
+
+model Audit {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  actorId String @db.Uuid
+  action String
+  subjectId String
+  at DateTime @default(now()) @db.Timestamptz(3)
+  metadata Json?
+  space Space @relation(fields: [spaceId], references: [id])
+  @@index([spaceId, at(sort: Desc)])
+}
+
+model MutationReceipt {
+  actorId String @db.Uuid
+  key String
+  hash String
+  response Json
+  status Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@id([actorId, key])
+}
+
+model DeviceToken {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  token String @unique
+  platform String
+  disabledAt DateTime? @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id])
+  reminders Reminder[]
+}
+
+model Reminder {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  requestId String @db.Uuid
+  deviceTokenId String @db.Uuid
+  kind ReminderKind
+  scheduledFor DateTime @db.Timestamptz(3)
+  dedupeKey String @unique
+  state DeliveryState @default(pending)
+  expoTicketId String?
+  receiptCheckedAt DateTime? @db.Timestamptz(3)
+  claimedAt DateTime? @db.Timestamptz(3)
+  sentAt DateTime? @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id])
+  request BorrowRequest @relation(fields: [requestId], references: [id])
+  device DeviceToken @relation(fields: [deviceTokenId], references: [id])
+  @@index([state, scheduledFor])
+}
+
+model PhotoUpload {
+  id String @id @default(uuid()) @db.Uuid
+  itemId String @db.Uuid
+  actorId String @db.Uuid
+  path String @unique
+  mime String
+  expiresAt DateTime @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  item Item @relation(fields: [itemId], references: [id])
+  @@index([itemId, actorId])
+}
