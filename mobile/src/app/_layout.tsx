@@ -21,7 +21,7 @@ function RootNavigation() {
       const nextId = session?.user.id ?? null;
       if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' && nextId !== lastUserId.current) {
         queryClient.removeQueries({ predicate: query => query.queryKey[0] !== 'session' });
-        if (event === 'SIGNED_OUT') queryClient.setQueryData(['session'], { members: [], userId: null, spaceId: null, theme: 'system', notifications: true });
+        if (event === 'SIGNED_OUT') queryClient.setQueryData(['session'], { members: [], userId: null, spaceId: null, theme: 'system', notifications: true, lowStockAlerts: true });
         else void queryClient.invalidateQueries({ queryKey: ['session'] });
       }
       lastUserId.current = nextId;

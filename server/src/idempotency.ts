@@ -5,10 +5,10 @@ import { prisma } from './db.js';
 import { fail } from './errors.js';
 
 export type Tx = Prisma.TransactionClient;
-type Result = { status: number; body: unknown };
+type Result = { status: number; body: unknown; afterCommit?: () => Promise<void> };
 export type Mutation = (tx: Tx, req: Request) => Promise<Result>;
 
-export function mutation(fn: Mutation) {
+export function mutation(fn: Mutation, timeoutMs = 10000) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       req.body ??= {};
@@ -23,7 +23,11 @@ export function mutation(fn: Mutation) {
         const output = await fn(tx, req);
         await tx.mutationReceipt.update({ where: { actorId_key: { actorId: req.actorId, key: key! } }, data: { response: output.body as Prisma.InputJsonValue, status: output.status } });
         return output;
-      }, { timeout: 10000 });
+      }, { timeout: timeoutMs });
+      if (result.afterCommit) {
+        try { await result.afterCommit(); }
+        catch (error) { console.error('Post-commit cleanup failed:', error); }
+      }
       res.status(result.status).json(result.body);
     } catch (error) { next(error); }
   };

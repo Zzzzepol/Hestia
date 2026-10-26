@@ -77,10 +77,11 @@ All `/v1` routes require `Authorization: Bearer <Supabase access token>`. Every 
 | PATCH | `/v1/profile` | `{name,timeZone}` → profile |
 | GET/POST | `/v1/spaces` | page / `{name}` → Session on create |
 | GET | `/v1/spaces/:spaceId` | Space `{id,name,code:"",memberIds,adminIds}` |
+| DELETE | `/v1/spaces/:spaceId` | `{confirmName}` → archive Space and preserve history |
 | GET | `/v1/spaces/:spaceId/members` | member page |
 | PATCH/DELETE | `/v1/spaces/:spaceId/members/:memberId` | `{role}` → Member / Session |
 | POST | `/v1/spaces/:spaceId/leave` | `{}` → Session |
-| GET/POST | `/v1/spaces/:spaceId/invites` | invite page / `{expiresInHours,maxUses}` → one-time code |
+| GET/POST | `/v1/spaces/:spaceId/invites` | invite page / `{}` → eight-character code valid for seven days |
 | POST | `/v1/spaces/:spaceId/invites/:inviteId/revoke` | `{}` → revoked invite |
 | POST | `/v1/spaces/join` | `{code}` → Session |
 | GET/POST | `/v1/spaces/:spaceId/items` | filtered page / ItemInput → Item |
@@ -101,6 +102,8 @@ All `/v1` routes require `Authorization: Bearer <Supabase access token>`. Every 
 | GET | `/v1/items/:itemId/photo` | `{url,expiresIn}`; URL lasts 60 seconds |
 | PUT/DELETE | `/v1/devices/:tokenId` | `{token,platform}` → device / disabled device |
 | GET | `/v1/reminders` | due/overdue loan page |
+| GET | `/v1/notifications?spaceId=UUID` | saved event notification page |
+| POST | `/v1/notifications/:notificationId/read` | `{}` → read receipt |
 
 Item filters: `q`, `category`, `location`, `kind`, `visibility`, `ownerId`, `status` (`Available`, `Requested`, `Reserved`, `Borrowed`, `Ready to return`, `Lost or damaged`), `lowStock=true|false`, `availability=available|unavailable`. `q` searches name, category, and location. 404 hides inaccessible objects; 403 means an accessible object but insufficient action authority; 409 is stale state or quantity conflict; 422 is invalid input; 429 is rate limiting; 503 is transient failure.
 
@@ -120,7 +123,7 @@ Item filters: `q`, `category`, `location`, `kind`, `visibility`, `ownerId`, `sta
 The current mock cannot be swapped byte-for-byte because it contains **demo identity**, a persistent six-character Space code, local `photoUri`, one loan slot, and unpaginated arrays. Its production API adapter should preserve the exported function names but make these changes:
 
 - `signIn(userId)` and `signOut()` become Supabase Auth sign-in/sign-out. Remove the demo user selector; `getSession()` reads the authenticated profile and selected Space. Store/refresh the Auth session in device storage before calling the API.
-- `getSpace().code` is always empty. Admins call `POST /spaces/:id/invites` to create an expiring, limited-use code and show that one-time value. `joinSpace(code)` calls `/spaces/join`.
+- `getSpace().code` is always empty. Admins call `POST /spaces/:id/invites` to create a seven-day code and show that one-time value. The app keeps the issued code on the admin's device and checks its server status before displaying it. `joinSpace(code)` calls `/spaces/join`.
 - `listItems()` and `listMembers()` unwrap `data` and handle `nextCursor` with TanStack Query infinite queries, or fetch all pages in the adapter temporarily. `getItem()` is needed when opening detail because paginated list items are not a complete cache.
 - Borrowing actions must pass the specific `loan.id` to `/requests/:requestId/...`. Several pending requests are valid; the item view shows the actor's actionable request or the active loan. A dedicated `/requests` inbox presents all pending requests to keepers.
 - The current screen's `active()` treats `Requested` as unavailable. Change availability to only `Reserved`, `Borrowed`, or `Ready to return`; show a pending request to its borrower while letting other members submit their own request. The current Requests tab must use the paginated `/requests` inbox to show every pending request.
@@ -175,7 +178,7 @@ HTTP client flow (all IDs and tokens stay in your local client environment):
 
 | Flow | Requests in order | What to inspect |
 | --- | --- | --- |
-| Space and invite | Auth sign-in → `POST /spaces {"name":"Home"}` → `POST /spaces/:id/invites {"expiresInHours":24,"maxUses":2}` → second account `POST /spaces/join {"code":"..."}` | `GET /spaces/:id/members`; invite `uses` in Dashboard |
+| Space and invite | Auth sign-in → `POST /spaces {"name":"Home"}` → `POST /spaces/:id/invites {}` → second account `POST /spaces/join {"code":"..."}` | `GET /spaces/:id/members`; invite `uses` in Dashboard |
 | Consumable | `POST /spaces/:id/items {"name":"Soap","kind":"consumable","category":"Cleaning","location":"Sink","visibility":"shared","quantity":2,"unit":"bottles","lowThreshold":1}` → `POST /items/:id/use {"amount":1}` → `POST /items/:id/restock {"amount":3}` → `GET /items/:id/history` | Balances 2→1→4 and actor IDs in `Activity` |
 | Returnable | Create item with `kind:"returnable"` and no stock fields → second account `POST /items/:id/requests {}` → keeper `POST /requests/:requestId/approve {}` → `/handover {}` → borrower `/ready {}` → keeper `/return {}` | State and history at each step; simultaneous approvals yield one 409 |
 | Lost/damaged | During Borrowed: keeper `/requests/:requestId/lost-or-damaged {"note":"..."}` → `/items/:id/restore {"note":"..."}` | Old request and notes remain in history |
