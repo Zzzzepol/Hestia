@@ -76,4 +76,29 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL integration', () => 
     expect(retry.body.spaceId).toBe(first.body.spaceId);
     await request(app).post('/v1/spaces').set(as(admin)).set('Idempotency-Key', key).send({ name: 'Changed input' }).expect(409).expect(r => expect(r.body.code).toBe('IDEMPOTENCY_REUSED'));
   });
+
+  it('previews and joins another Space, then lets only its admin delete it', async () => {
+    const created = await request(app).post('/v1/spaces').set(as(admin)).set(idem()).send({ name: 'Temporary household', kind: 'household' }).expect(201);
+    const temporaryId = created.body.spaceId as string;
+    const code = created.body.invite.code as string;
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    const preview = await request(app).post('/v1/spaces/join/preview').set(as(borrowerA)).set(idem()).send({ code }).expect(200);
+    expect(preview.body).toMatchObject({ id: temporaryId, name: 'Temporary household', kind: 'household', memberCount: 1 });
+    await request(app).post('/v1/spaces/join').set(as(borrowerA)).set(idem()).send({ code }).expect(200);
+    const list = await request(app).get('/v1/spaces').set(as(borrowerA)).expect(200);
+    expect(list.body.data.map((space: { id: string }) => space.id)).toContain(spaceId);
+    expect(list.body.data.map((space: { id: string }) => space.id)).toContain(temporaryId);
+    const item = await prisma.item.create({ data: { spaceId: temporaryId, ownerId: admin, name: 'Test lamp', kind: 'returnable', category: 'Tools', location: 'Shelf', visibility: 'shared' } });
+    await prisma.activity.create({ data: { itemId: item.id, actorId: admin, kind: 'Created' } });
+    await request(app).delete(`/v1/spaces/${temporaryId}`).set(as(borrowerA)).set(idem()).send({ confirmName: 'Temporary household' }).expect(403);
+    await request(app).delete(`/v1/spaces/${temporaryId}`).set(as(admin)).set(idem()).send({ confirmName: 'Wrong name' }).expect(422);
+    const removed = await request(app).delete(`/v1/spaces/${temporaryId}`).set(as(admin)).set(idem()).send({ confirmName: 'Temporary household' }).expect(200);
+    expect(removed.body.spaceId).toBe(spaceId);
+    expect((await prisma.space.findUniqueOrThrow({ where: { id: temporaryId } })).archivedAt).not.toBeNull();
+    expect(await prisma.item.findUnique({ where: { id: item.id } })).not.toBeNull();
+    expect(await prisma.activity.count({ where: { itemId: item.id } })).toBe(1);
+    await request(app).get(`/v1/items/${item.id}`).set(as(admin)).expect(404);
+    await request(app).post('/v1/spaces/join/preview').set(as(outsider)).set(idem()).send({ code }).expect(410);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: borrowerA } })).selectedSpaceId).toBe(spaceId);
+  });
 });

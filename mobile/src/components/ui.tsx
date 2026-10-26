@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { BlurView } from 'expo-blur';
-import { ReactNode, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { ReactNode, useEffect, useState } from 'react';
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import { base, colors, spacing, statusMeta, type Scheme, typeScale } from '@/theme/colors';
 import type { Item } from '@/types';
 
@@ -25,5 +25,24 @@ export function ItemCard({ item, scheme, onPress, status }: { item: Item; scheme
 }
 export function Sheet({ visible, title, scheme, onClose, children }: { visible: boolean; title: string; scheme: Scheme; onClose: () => void; children: ReactNode }) { const c = colors[scheme]; const reduced = useReducedMotion(); return <Modal visible={visible} transparent animationType={reduced ? 'none' : 'slide'} onRequestClose={onClose}><View style={styles.scrim}>{Platform.OS !== 'android' && <BlurView intensity={20} tint={scheme} pointerEvents="none" style={StyleSheet.absoluteFill} />}<Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close sheet" /><View style={[styles.sheet, { backgroundColor: c.surface }]}><View style={[styles.grabber, { backgroundColor: c.border }]} /><View style={styles.sheetHeading}><Text style={[styles.title, { color: c.text }]}>{title}</Text><Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}><Ionicons name="close" size={24} color={c.text} /></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}>{children}</ScrollView></View></View></Modal>; }
 export function EmptyState({ title, body, action, onPress, scheme }: { title: string; body: string; action: string; onPress: () => void; scheme: Scheme }) { const c = colors[scheme]; return <View style={styles.empty}><Ionicons name="leaf-outline" size={34} color={c.text} /><Text style={[styles.title, { color: c.text, textAlign: 'center' }]}>{title}</Text><Text style={{ color: c.muted, textAlign: 'center', fontSize: typeScale.body }}>{body}</Text><Button label={action} onPress={onPress} scheme={scheme} kind="secondary" /></View>; }
-export function Skeleton({ scheme }: { scheme: Scheme }) { const c = colors[scheme]; return <View accessibilityRole="progressbar" accessibilityLabel="Loading"><ActivityIndicator color={c.text} /><View style={{ gap: 12, marginTop: 16 }}>{[0, 1, 2].map(i => <View key={i} style={{ height: 88, borderRadius: 18, backgroundColor: c.surfaceAlt }} />)}</View></View>; }
+export function Skeleton({ scheme }: { scheme: Scheme }) {
+  const c = colors[scheme];
+  const reduced = useReducedMotion();
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    if (reduced) { cancelAnimation(opacity); opacity.set(1); return; }
+    opacity.set(withRepeat(withTiming(.48, { duration: 1100, easing: Easing.bezier(.77, 0, .175, 1) }), -1, true));
+    return () => cancelAnimation(opacity);
+  }, [opacity, reduced]);
+  const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  return <View accessibilityRole="progressbar" accessibilityLabel="Loading content">
+    <Animated.View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[{ gap: 12 }, pulse]}>
+      <View style={{ width: '42%', height: 22, borderRadius: 11, backgroundColor: c.surfaceAlt, marginBottom: 2 }} />
+      {[0, 1, 2].map(i => <View key={i} style={{ minHeight: 88, borderRadius: 18, backgroundColor: c.surfaceAlt, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ width: 55, height: 55, borderRadius: 12, backgroundColor: c.border }} />
+        <View style={{ flex: 1, gap: 10 }}><View style={{ width: i === 1 ? '72%' : '58%', height: 14, borderRadius: 7, backgroundColor: c.border }} /><View style={{ width: i === 2 ? '47%' : '38%', height: 11, borderRadius: 6, backgroundColor: c.border }} /></View>
+      </View>)}
+    </Animated.View>
+  </View>;
+}
 const styles = StyleSheet.create({ button: { borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 }, buttonText: { fontSize: 16, fontWeight: '700', textAlign: 'center' }, chip: { alignSelf: 'flex-start', flexDirection: 'row', gap: 6, alignItems: 'center', borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, maxWidth: '100%' }, card: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 20, padding: 12, minHeight: 100 }, cardTitle: { fontSize: 17, fontWeight: '700' }, photo: { width: 64, height: 64, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, scrim: { flex: 1, backgroundColor: base.scrim, justifyContent: 'flex-end' }, sheet: { maxHeight: '85%', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10 }, grabber: { width: 36, height: 4, borderRadius: 4, alignSelf: 'center', marginBottom: 12 }, sheetHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }, title: { fontSize: 22, fontWeight: '700' }, close: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 } });

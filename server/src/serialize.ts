@@ -27,5 +27,5 @@ export async function sessionView(actorId: string, db: Prisma.TransactionClient 
   const selected = user.selectedSpaceId && await db.membership.findUnique({ where: { spaceId_userId: { spaceId: user.selectedSpaceId, userId: actorId } } });
   const spaceId = selected ? user.selectedSpaceId : null;
   const members = spaceId ? await db.membership.findMany({ where: { spaceId }, include: { user: true }, orderBy: { joinedAt: 'asc' } }) : [];
-  return { members: members.map(memberView), userId: actorId, spaceId, theme: user.theme, notifications: user.notifications };
+  return { members: members.map(memberView), userId: actorId, spaceId, theme: user.theme, notifications: user.notifications, lowStockAlerts: user.lowStockAlerts };
 }

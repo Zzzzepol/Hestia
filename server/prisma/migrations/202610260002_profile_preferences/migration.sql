@@ -1,0 +1,1 @@
+ALTER TABLE "User" ADD COLUMN "lowStockAlerts" BOOLEAN NOT NULL DEFAULT true;

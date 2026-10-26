@@ -14,7 +14,7 @@ export function visibleWhere(actorId: string, spaceId: string): Prisma.ItemWhere
 }
 
 export async function visibleItem(itemId: string, actorId: string) {
-  const item = await prisma.item.findFirst({ where: { id: itemId, deletedAt: null, OR: [{ ownerId: actorId }, { visibility: 'shared', space: { memberships: { some: { userId: actorId } } } }] } });
+  const item = await prisma.item.findFirst({ where: { id: itemId, deletedAt: null, space: { memberships: { some: { userId: actorId } } }, OR: [{ ownerId: actorId }, { visibility: 'shared' }] } });
   if (!item) fail(404, 'NOT_FOUND', 'Item not found.');
   return item!;
 }

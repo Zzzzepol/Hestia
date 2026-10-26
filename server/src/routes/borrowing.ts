@@ -7,6 +7,7 @@ import { fail } from '../errors.js';
 import { lockItem, mutation, type Tx } from '../idempotency.js';
 import { keeper, visibleItem } from '../policy.js';
 import { itemView, loanView } from '../serialize.js';
+import { notifyUsers } from '../notifications.js';
 
 export const borrowing = Router();
 const requestParams = z.object({ requestId: uuid });
@@ -35,7 +36,7 @@ borrowing.get('/requests', async (req, res) => {
 });
 borrowing.post('/items/:itemId/requests', mutation(async (tx, req) => {
   const { itemId } = idParams.parse(req.params);
-  const { dueAt } = z.object({ dueAt: z.iso.datetime().optional() }).strict().parse(req.body);
+  const { dueAt, note } = z.object({ dueAt: z.iso.datetime().optional(), note: z.string().trim().max(500).optional() }).strict().parse(req.body);
   await lockItem(tx, itemId);
   const item = await tx.item.findUnique({ where: { id: itemId } });
   if (!item || item.deletedAt || item.visibility !== 'shared') fail(404, 'NOT_FOUND', 'Item not found.');
@@ -46,8 +47,10 @@ borrowing.post('/items/:itemId/requests', mutation(async (tx, req) => {
   if (await tx.borrowRequest.count({ where: { itemId, borrowerId: req.actorId, state: 'Requested' } })) fail(409, 'CONFLICT', 'You already requested this item.');
   const planned = dueAt ? new Date(dueAt) : undefined;
   if (planned && planned <= new Date()) fail(422, 'VALIDATION', 'Due date must be in the future.');
-  const request = await tx.borrowRequest.create({ data: { itemId, borrowerId: req.actorId, dueAt: planned } });
-  await tx.activity.create({ data: { itemId, actorId: req.actorId, kind: 'Requested' } });
+  const created = await tx.borrowRequest.create({ data: { itemId, borrowerId: req.actorId, dueAt: planned, ...(note ? { note } : {}) } });
+  await tx.activity.create({ data: { itemId, actorId: req.actorId, kind: 'Requested', ...(note ? { note } : {}) } });
+  const borrower = await tx.user.findUnique({ where: { id: req.actorId }, select: { name: true } });
+  await notifyUsers(tx, { userIds: [item!.ownerId, item!.custodianId], spaceId: item!.spaceId, itemId, requestId: created.id, kind: 'request', title: 'New borrow request', body: `${borrower?.name ?? 'A member'} wants to borrow ${item!.name}.`, dedupeKey: `request:${created.id}` });
   return { status: 201, body: await itemView(item!, req.actorId, tx) };
 }));
 
@@ -64,7 +67,9 @@ const transitions: Record<Action, { from: string[]; to: 'Reserved' | 'Rejected' 
 for (const [action, rule] of Object.entries(transitions) as [Action, typeof transitions[Action]][]) {
   borrowing.post(`/requests/:requestId/${action}`, mutation(async (tx, req) => {
     const { requestId } = requestParams.parse(req.params);
-    const { note } = action === 'lost-or-damaged' ? noteBody.parse(req.body) : (empty.parse(req.body), { note: undefined });
+    const { note, outcome } = action === 'lost-or-damaged'
+      ? noteBody.extend({ outcome: z.enum(['lost', 'damaged']).optional() }).parse(req.body)
+      : (empty.parse(req.body), { note: undefined, outcome: undefined });
     const { request, item } = await loadRequest(tx, requestId, req.actorId);
     if (rule.actor === 'keeper') keeper(item, req.actorId);
     else if (request.borrowerId !== req.actorId) fail(403, 'FORBIDDEN', 'Only the borrower can do that.');
@@ -79,9 +84,10 @@ for (const [action, rule] of Object.entries(transitions) as [Action, typeof tran
       for (const other of others) await tx.activity.create({ data: { itemId: item.id, actorId: req.actorId, kind: 'Rejected', note: `Competing request ${other.id} closed.` } });
       await tx.audit.create({ data: { spaceId: item.spaceId, actorId: req.actorId, action: 'request.approved', subjectId: requestId } });
     }
-    if (action === 'lost-or-damaged') await tx.item.update({ where: { id: item.id }, data: { damaged: true } });
-    await tx.activity.create({ data: { itemId: item.id, actorId: req.actorId, kind: action === 'lost-or-damaged' ? 'Lost or damaged' : rule.to === 'ReadyToReturn' ? 'Ready to return' : rule.to, ...(note ? { note } : {}) } });
-    return { status: 200, body: await itemView(item, req.actorId, tx) };
+    const currentItem = action === 'lost-or-damaged' ? await tx.item.update({ where: { id: item.id }, data: { damaged: true } }) : item;
+    await tx.activity.create({ data: { itemId: item.id, actorId: req.actorId, kind: action === 'lost-or-damaged' ? outcome === 'lost' ? 'Lost' : outcome === 'damaged' ? 'Damaged' : 'Lost or damaged' : rule.to === 'ReadyToReturn' ? 'Ready to return' : rule.to, ...(note ? { note } : {}) } });
+    if (action === 'return') await notifyUsers(tx, { userIds: [request.borrowerId], spaceId: item.spaceId, itemId: item.id, requestId, kind: 'return_confirmed', title: 'Return confirmed', body: `${item.name} has been returned.`, dedupeKey: `return:${requestId}` });
+    return { status: 200, body: await itemView(currentItem, req.actorId, tx) };
   }));
 }
 borrowing.post('/items/:itemId/restore', mutation(async (tx, req) => {

@@ -7,6 +7,7 @@ import { fail } from '../errors.js';
 import { lockItem, mutation, type Tx } from '../idempotency.js';
 import { keeper, membership, visibleItem, visibleWhere } from '../policy.js';
 import { activityView, itemView } from '../serialize.js';
+import { notifyUsers } from '../notifications.js';
 
 export const items = Router();
 const spaceParams = z.object({ spaceId: uuid });
@@ -122,6 +123,7 @@ async function quantityChange(tx: Tx, item: Item, actorId: string, delta: number
   await tx.$queryRaw`SELECT set_config('hestia.actor_id', ${actorId}, true)`;
   await tx.$queryRaw`SELECT set_config('hestia.stock_kind', ${kind}, true)`;
   const updated = await tx.item.update({ where: { id: item.id }, data: { quantity: after } });
+  if (before > (item.lowThreshold ?? 0) && after <= (item.lowThreshold ?? 0)) await notifyUsers(tx, { userIds: [item.ownerId, item.custodianId], spaceId: item.spaceId, itemId: item.id, kind: 'low_stock', title: 'Running low', body: `${item.name} has ${after} ${item.unit ?? 'units'} left.`, dedupeKey: `low-stock:${item.id}:${updated.updatedAt.toISOString()}` });
   return itemView(updated, actorId, tx);
 }
 for (const [path, sign, kind] of [['use', -1, 'Used'], ['restock', 1, 'Restocked']] as const) {
