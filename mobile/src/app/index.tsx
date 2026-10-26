@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,17 +39,18 @@ function itemStatus(i: Item) { if (i.kind === 'consumable') return (i.quantity ?
 export default function App() {
   const qc = useQueryClient(); const system = useColorScheme(); const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  const [tab, setTab] = useState<Tab>('Home'); const [selectedId, setSelectedId] = useState<string | null>(null); const [spacePicker, setSpacePicker] = useState(false); const [menuOpen, setMenuOpen] = useState(false);
   const session = useQuery({ queryKey: keys.session, queryFn: api.getSession }); const db = session.data;
   const scheme: Scheme = db?.theme === 'light' ? 'light' : db?.theme === 'dark' ? 'dark' : system === 'dark' ? 'dark' : 'light'; const c = colors[scheme];
   const itemsQ = useQuery({ queryKey: keys.items, queryFn: api.listItems, enabled: !!db?.spaceId });
   const membersQ = useQuery({ queryKey: keys.members, queryFn: api.listMembers, enabled: !!db?.spaceId });
   const spaceQ = useQuery({ queryKey: keys.space, queryFn: api.getSpace, enabled: !!db?.spaceId });
-  const invitesQ = useQuery({ queryKey: [...keys.invites, db?.spaceId], queryFn: api.listInvites, enabled: !!db?.spaceId && !!spaceQ.data?.adminIds.includes(db?.userId ?? '') });
-  const spacesQ = useQuery({ queryKey: keys.spaces, queryFn: api.listSpaces, enabled: !!db?.userId });
-  const requestsQ = useQuery({ queryKey: keys.requests, queryFn: api.listRequests, enabled: !!db?.spaceId });
-  const remindersQ = useQuery({ queryKey: keys.reminders, queryFn: api.listDueReminders, enabled: !!db?.spaceId });
-  const notificationsQ = useQuery({ queryKey: [...keys.notifications, db?.spaceId], queryFn: api.listNotifications, enabled: !!db?.spaceId });
-  const accountQ = useQuery({ queryKey: keys.account, queryFn: api.getAccount, enabled: !!db?.userId });
+  const invitesQ = useQuery({ queryKey: [...keys.invites, db?.spaceId], queryFn: api.listInvites, enabled: tab === 'Space' && !!db?.spaceId && !!spaceQ.data?.adminIds.includes(db?.userId ?? '') });
+  const spacesQ = useQuery({ queryKey: keys.spaces, queryFn: api.listSpaces, enabled: !!db?.userId && (!db.spaceId || spacePicker || tab === 'Profile' || tab === 'Space') });
+  const requestsQ = useQuery({ queryKey: keys.requests, queryFn: api.listRequests, enabled: !!db?.spaceId && !!itemsQ.data && ['Home', 'Requests', 'Reminders'].includes(tab) });
+  const remindersQ = useQuery({ queryKey: keys.reminders, queryFn: api.listDueReminders, enabled: !!db?.spaceId && !!itemsQ.data && ['Home', 'Reminders'].includes(tab) });
+  const notificationsQ = useQuery({ queryKey: [...keys.notifications, db?.spaceId], queryFn: api.listNotifications, enabled: !!db?.spaceId && !!itemsQ.data && ['Home', 'Reminders'].includes(tab) });
+  const accountQ = useQuery({ queryKey: keys.account, queryFn: api.getAccount, enabled: !!db?.userId && tab === 'Profile' });
   const [offline, setOffline] = useState(false);
   const [pendingUses, setPendingUses] = useState<PendingUse[]>([]); const [queueOwner, setQueueOwner] = useState<string | null>(null); const syncingUses = useRef(false);
   const cacheKey = db?.userId && db.spaceId ? `hestia:items:${db.userId}:${db.spaceId}` : null;
@@ -56,7 +58,6 @@ export default function App() {
   const storedItems = itemsQ.data ?? (offline && cacheKey === savedItems?.key ? savedItems.data : []);
   const items = offline ? storedItems.map(item => pendingUses.filter(change => change.itemId === item.id && change.spaceId === db?.spaceId && !item.history.some(activity => activity.id === change.key)).reduce((current, change) => ({ ...current, quantity: Math.max(0, (current.quantity ?? 0) - change.amount) }), item)) : storedItems;
   const members = membersQ.data ?? []; const me = db?.members.find(m => m.id === db.userId); const myRole = spaceQ.data?.adminIds.includes(db?.userId ?? '') ? 'admin' : 'member';
-  const [tab, setTab] = useState<Tab>('Home'); const [selectedId, setSelectedId] = useState<string | null>(null); const [spacePicker, setSpacePicker] = useState(false); const [menuOpen, setMenuOpen] = useState(false);
   const detailQ = useQuery({ queryKey: [...keys.detail, selectedId], queryFn: () => api.getItemWithPhoto(selectedId!), enabled: !!db?.spaceId && !!selectedId });
   const selected = detailQ.data ?? items.find(i => i.id === selectedId);
   const [sheet, setSheet] = useState<'quantity' | 'borrow' | 'handover' | 'report' | 'restore' | 'owner' | null>(null); const [quantityMode, setQuantityMode] = useState<'use' | 'restock'>('use'); const [amount, setAmount] = useState(1); const [borrowError, setBorrowError] = useState(''); const [restoreNote, setRestoreNote] = useState(''); const [ownerChoice, setOwnerChoice] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function App() {
   const inviteIsActive = !inviteId || invitesQ.data?.some(row => row.id === inviteId && !row.revokedAt && Date.parse(row.expiresAt) > reminderNow && row.uses < row.maxUses);
   const visibleInvite = inviteSpaceId === db?.spaceId && inviteExpiry && Date.parse(inviteExpiry) > reminderNow && inviteIsActive ? newInvite : '';
   useEffect(() => { if (!inviteCacheKey || !activeSpaceId) return; const spaceId = activeSpaceId; let mounted = true; void AsyncStorage.getItem(inviteCacheKey).then(raw => { if (!mounted || !raw) return; try { const saved = JSON.parse(raw) as api.SpaceInvite; if (saved.code && saved.id && Date.parse(saved.expiresAt) > Date.now()) { setNewInvite(saved.code); setInviteId(saved.id); setInviteExpiry(saved.expiresAt); setInviteSpaceId(spaceId); } } catch { /* Ignore invalid local invite data. */ } }); return () => { mounted = false; }; }, [inviteCacheKey, activeSpaceId]);
-  const rememberInvite = async (spaceId: string, issued: api.SpaceInvite) => { setNewInvite(issued.code); setInviteId(issued.id); setInviteExpiry(issued.expiresAt); setInviteSpaceId(spaceId); if (db?.userId) await AsyncStorage.setItem(`hestia:invite:${db.userId}:${spaceId}`, JSON.stringify(issued)); };
+  const rememberInvite = async (spaceId: string, issued: api.SpaceInvite) => { setNewInvite(issued.code); setInviteId(issued.id); setInviteExpiry(issued.expiresAt); setInviteSpaceId(spaceId); if (db?.userId) await AsyncStorage.setItem(`hestia:invite:${db.userId}:${spaceId}`, JSON.stringify(issued)).catch(cause => console.warn('Could not cache invite on device', cause)); };
   useEffect(() => {
     const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange(event => {
       if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
@@ -136,9 +137,16 @@ export default function App() {
   useEffect(() => NetInfo.addEventListener(s => setOffline(s.isConnected === false || s.isInternetReachable === false)), []);
   useEffect(() => { const initial = setTimeout(() => setReminderNow(Date.now()), 0); const timer = setInterval(() => setReminderNow(Date.now()), 60_000); return () => { clearTimeout(initial); clearInterval(timer); }; }, []);
   useEffect(() => { if (!undo) return; const timer = setTimeout(() => setUndo(null), 8000); return () => clearTimeout(timer); }, [undo]);
-  const refresh = async () => { await Promise.all(Object.values(keys).map(queryKey => qc.invalidateQueries({ queryKey }))); };
+  const refresh = async () => {
+    const visible = new Set<string>([...keys.items, ...keys.detail]);
+    if (['Home', 'Requests', 'Reminders'].includes(tab)) [...keys.requests, ...keys.reminders, ...keys.notifications].forEach(key => visible.add(key));
+    if (tab === 'Space') [...keys.space, ...keys.members, ...keys.invites, ...keys.spaces].forEach(key => visible.add(key));
+    if (tab === 'Profile') [...keys.session, ...keys.account, ...keys.spaces].forEach(key => visible.add(key));
+    if (!db?.userId) keys.session.forEach(key => visible.add(key));
+    await Promise.all(Object.values(keys).map(queryKey => qc.invalidateQueries({ queryKey, refetchType: visible.has(queryKey[0]) ? 'active' : 'none' })));
+  };
   const applySpaceSession = (next: Session) => { qc.setQueryData(keys.session, next); [keys.items, keys.members, keys.space, keys.invites, keys.requests, keys.reminders, keys.notifications, keys.detail].forEach(queryKey => qc.removeQueries({ queryKey })); };
-  const mutation = useMutation({ mutationFn: (fn: () => Promise<unknown>) => fn(), onSuccess: async () => { setError(''); await refresh(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); }, onError: e => { setError(message(e)); refresh(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } });
+  const mutation = useMutation({ mutationFn: (fn: () => Promise<unknown>) => fn(), onSuccess: () => { setError(''); void refresh(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); }, onError: e => { if (e instanceof api.PhotoUploadError) { setEditingId(e.item.id); void refresh(); } setError(message(e)); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } });
   const act = (fn: () => Promise<unknown>, after?: () => void) => mutation.mutate(fn, { onSuccess: () => after?.() });
   const borrow = useMutation({ mutationFn: ({ itemId, dueAt, note }: { itemId: string; dueAt: string; note: string }) => api.requestBorrow(itemId, dueAt, note), onMutate: async ({ itemId, dueAt, note }) => { await qc.cancelQueries({ queryKey: keys.items }); const old = qc.getQueryData<Item[]>(keys.items); qc.setQueryData<Item[]>(keys.items, xs => xs?.map(x => x.id === itemId ? { ...x, loan: { id: 'optimistic', borrowerId: db!.userId!, state: 'Requested', requestedAt: new Date().toISOString(), dueAt, note } } : x)); return { old }; }, onError: (e, _input, ctx) => { qc.setQueryData(keys.items, ctx?.old); setBorrowError(message(e)); }, onSettled: () => { qc.invalidateQueries({ queryKey: keys.items }); qc.invalidateQueries({ queryKey: keys.requests }); qc.invalidateQueries({ queryKey: keys.reminders }); qc.invalidateQueries({ queryKey: keys.detail }); } });
   const confirm = (title: string, detail: string, fn: () => Promise<unknown>, after?: () => void) => setConfirmation({ title, detail, fn, after });
@@ -150,12 +158,17 @@ export default function App() {
   const choices = (opts: string[], value: string, change: (v: string) => void) => <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, minHeight: 44 }} contentContainerStyle={{ gap: 8, alignItems: 'center' }}>{opts.map(v => <Chip key={v} label={v} scheme={scheme} selected={v === value} onPress={() => change(v)} />)}</ScrollView>;
   const wrap = (children: React.ReactNode) => <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 90 }}>{children}</ScrollView>;
   const choosePhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: .7, base64: true });
-    if (result.canceled) return;
-    const photo = result.assets[0];
-    const base64 = photo.base64;
-    if (!base64) return setError('Could not read the selected photo.');
-    setForm(current => ({ ...current, photoUri: photo.uri, photoBase64: base64, photoMime: photo.mimeType === 'image/png' || photo.mimeType === 'image/webp' ? photo.mimeType : 'image/jpeg' }));
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: .7 });
+      if (result.canceled) return;
+      const context = ImageManipulator.manipulate(result.assets[0].uri, { maxWidth: 1600, maxHeight: 1600 });
+      const image = await context.renderAsync();
+      const photo = await image.saveAsync({ format: SaveFormat.JPEG, compress: .72, base64: true });
+      if (!photo.base64) throw new Error('Could not read the selected photo.');
+      if (photo.base64.length * .75 > 5_000_000) throw new Error('That photo is too large. Choose a smaller one.');
+      setForm(current => ({ ...current, photoUri: photo.uri, photoBase64: photo.base64, photoMime: 'image/jpeg' }));
+      setError('');
+    } catch (cause) { setError(message(cause)); }
   };
   const saveItem = () => act(() => editingId ? api.updateItem(editingId, form) : api.addItem(form), () => { setTab('Items'); setEditingId(null); setForm(emptyForm); });
   const queueUse = async (item: Item, quantity: number) => {
@@ -184,7 +197,7 @@ export default function App() {
   const saveProfile = () => act(async () => { if (profileName.trim() !== me?.name) await api.updateProfile(profileName); if (profileEmail.trim().toLowerCase() !== accountQ.data?.email.toLowerCase()) await api.updateEmail(profileEmail); }, () => { setProfileEditOpen(false); setProfileNotice(profileEmail.trim().toLowerCase() !== accountQ.data?.email.toLowerCase() ? 'Check your new email address to confirm the change.' : 'Profile updated.'); void accountQ.refetch(); });
   const savePassword = () => act(() => api.changePassword(currentPassword, nextPassword), () => { setPasswordOpen(false); setCurrentPassword(''); setNextPassword(''); setConfirmNextPassword(''); setProfileNotice('Password changed.'); });
 
-  if (session.isLoading) return <SafeAreaView style={{ flex: 1, backgroundColor: c.background, padding: 24 }}><Skeleton scheme={scheme} /></SafeAreaView>;
+  if (session.isLoading) return <View style={{ flex: 1, backgroundColor: c.background }} />;
   if (session.isError) return <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}><EmptyState title="Could not open Hestia" body={message(session.error)} action="Try again" onPress={() => session.refetch()} scheme={scheme} /></SafeAreaView>;
   if (!db?.userId || recoveryMode) return <AuthScreen
     email={email}

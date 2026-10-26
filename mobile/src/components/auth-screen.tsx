@@ -6,6 +6,7 @@ import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import Svg, { Circle, Ellipse, G, Path, Rect } from 'react-native-svg';
+import { BrandWordmark } from '@/components/brand-logo';
 
 const plum = '#3F2B42';
 const cream = '#F3E8E2';
@@ -186,6 +187,7 @@ export function AuthScreen(props: Props) {
       <Animated.View key={mode} entering={FadeIn.duration(reducedMotion ? 90 : 150)} style={{ flex: 1 }}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingBottom: Math.max(28, insets.bottom + 16) }} style={{ backgroundColor: cream }}>
         <View style={{ height: heroHeight, backgroundColor: plum }}>
           <Artwork mode={mode} height={heroHeight} topInset={insets.top} />
+          <BrandWordmark width={120} style={{ position: 'absolute', left: 26, top: insets.top + 20, borderRadius: 5 }} />
           <Text accessibilityRole="header" style={{ position: 'absolute', left: 29, bottom: 92, color: cream, fontSize: 46, lineHeight: 45, fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' }), letterSpacing: -1.6 }}>{heading}</Text>
         </View>
         <View style={{ width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 29, paddingTop: 18, gap: 0 }}>

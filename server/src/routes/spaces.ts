@@ -5,7 +5,7 @@ import { empty, pageQuery, uuid } from '../contract.js';
 import { fail } from '../errors.js';
 import { membership } from '../policy.js';
 import { mutation } from '../idempotency.js';
-import { memberView, sessionView } from '../serialize.js';
+import { memberView, sessionView, userMemberView } from '../serialize.js';
 import { INVITE_EXPIRY_HOURS, inviteHash, issueInviteCode } from '../invites.js';
 
 export const spaces = Router();
@@ -28,7 +28,8 @@ spaces.patch('/session', mutation(async (tx, req) => {
     const member = await tx.membership.findUnique({ where: { spaceId_userId: { spaceId: data.spaceId, userId: req.actorId } } });
     if (!member) fail(404, 'NOT_FOUND', 'Space not found.');
   }
-  await tx.user.update({ where: { id: req.actorId }, data });
+  const { spaceId, ...settings } = data;
+  await tx.user.update({ where: { id: req.actorId }, data: { ...settings, ...(spaceId !== undefined ? { selectedSpaceId: spaceId } : {}) } });
   return { status: 200, body: await sessionView(req.actorId, tx) };
 }));
 spaces.get('/spaces', async (req, res) => {
@@ -39,11 +40,11 @@ spaces.get('/spaces', async (req, res) => {
 spaces.post('/spaces', mutation(async (tx, req) => {
   const { name, kind } = z.object({ name: z.string().trim().min(1).max(100), kind: z.enum(['household', 'dorm', 'student_org', 'small_office']).default('household') }).strict().parse(req.body);
   const space = await tx.space.create({ data: { name, kind, memberships: { create: { userId: req.actorId, role: 'admin' } } } });
-  await tx.user.update({ where: { id: req.actorId }, data: { selectedSpaceId: space.id } });
+  const user = await tx.user.update({ where: { id: req.actorId }, data: { selectedSpaceId: space.id } });
   const code = issueInviteCode();
   const invite = await tx.invite.create({ data: { spaceId: space.id, tokenHash: inviteHash(code), expiresAt: new Date(Date.now() + INVITE_EXPIRY_HOURS * 3600000), maxUses: unlimitedInviteUses, createdById: req.actorId } });
   await tx.audit.create({ data: { spaceId: space.id, actorId: req.actorId, action: 'invite.created', subjectId: invite.id } });
-  return { status: 201, body: { ...await sessionView(req.actorId, tx), invite: { id: invite.id, code, expiresAt: invite.expiresAt.toISOString() } } };
+  return { status: 201, body: { members: [userMemberView(user, 'admin')], userId: user.id, spaceId: space.id, theme: user.theme, notifications: user.notifications, lowStockAlerts: user.lowStockAlerts, invite: { id: invite.id, code, expiresAt: invite.expiresAt.toISOString() } } };
 }));
 spaces.get('/spaces/:spaceId', async (req, res) => {
   const { spaceId } = params.parse(req.params);

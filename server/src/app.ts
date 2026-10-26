@@ -5,6 +5,7 @@ import { rateLimit } from 'express-rate-limit';
 import { authenticate } from './auth.js';
 import { config } from './config.js';
 import { errorHandler } from './errors.js';
+import { prisma } from './db.js';
 import { spaces } from './routes/spaces.js';
 import { items } from './routes/items.js';
 import { borrowing } from './routes/borrowing.js';
@@ -21,6 +22,21 @@ export function createApp(auth: RequestHandler = authenticate) {
   app.use(cors({ origin: (origin, callback) => callback(null, !origin || origins.includes(origin)), methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'], allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'] }));
   app.use('/v1', rateLimit({ windowMs: 60000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false, message: { code: 'RATE_LIMITED', message: 'Too many requests.' } }));
   app.use('/v1/spaces/join', rateLimit({ windowMs: 60000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false, message: { code: 'RATE_LIMITED', message: 'Too many invite attempts.' } }));
+  app.use('/v1', (req, res, next) => {
+    const started = performance.now();
+    let reported = false;
+    const report = () => {
+      if (reported) return;
+      reported = true;
+      const durationMs = Math.round(performance.now() - started);
+      if (durationMs < 2000 && res.statusCode < 500) return;
+      // Route patterns avoid logging user IDs, query strings, or request bodies.
+      console.warn('API request', { method: req.method, route: req.route?.path ?? '/v1/*', status: res.statusCode, durationMs, disconnected: !res.writableEnded });
+    };
+    res.once('finish', report);
+    res.once('close', report);
+    next();
+  });
   app.use('/v1', auth);
   app.use(express.json({ limit: '64kb' }));
   app.use('/v1', (req, _res, next) => {
@@ -32,6 +48,10 @@ export function createApp(auth: RequestHandler = authenticate) {
     } catch (error) { next(error); }
   });
   app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/ready', async (_req, res) => {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, database: 'connected' });
+  });
   app.use('/v1', spaces, items, borrowing, photos, reminders);
   app.use((_req, res) => res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' }));
   app.use(errorHandler);

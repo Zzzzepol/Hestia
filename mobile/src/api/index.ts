@@ -1,4 +1,4 @@
-import { createApiClient } from './client';
+import { ApiError, createApiClient } from './client';
 import { decode } from 'base64-arraybuffer';
 import { getSupabaseClient } from '@/lib/supabase';
 import * as Linking from 'expo-linking';
@@ -7,6 +7,9 @@ import type { BorrowState, Database, Item, ItemInput, Member, Session, Space, Sp
 
 const emptySession: Session = { members: [], userId: null, spaceId: null, theme: 'system', notifications: true, lowStockAlerts: true };
 const idempotencyKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+let sessionCache: { token: string; value?: Session; expiresAt: number; pending?: Promise<Session> } | null = null;
+const pendingMutations = new Map<string, string>();
+const clearSessionCache = () => { sessionCache = null; };
 let client: ReturnType<typeof createApiClient> | undefined;
 function api() {
   if (client) return client;
@@ -20,8 +23,23 @@ function api() {
   return client;
 }
 const get = <T,>(path: `/v1/${string}`) => api().request<T>(path);
-const mutate = <T,>(path: `/v1/${string}`, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body: unknown = {}) =>
-  api().request<T>(path, { method, body, idempotencyKey: idempotencyKey() });
+async function mutate<T>(path: `/v1/${string}`, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body: unknown = {}, timeoutMs?: number): Promise<T> {
+  const input = JSON.stringify([method, path, body]);
+  let key = pendingMutations.get(input);
+  if (!key) {
+    key = idempotencyKey();
+    pendingMutations.set(input, key);
+    if (pendingMutations.size > 100) pendingMutations.delete(pendingMutations.keys().next().value!);
+  }
+  try {
+    const result = await api().request<T>(path, { method, body, idempotencyKey: key, timeoutMs });
+    if (pendingMutations.get(input) === key) pendingMutations.delete(input);
+    return result;
+  } catch (error) {
+    if (!(error instanceof ApiError && (error.status === 0 || error.status >= 500)) && pendingMutations.get(input) === key) pendingMutations.delete(input);
+    throw error;
+  }
+}
 type Page<T> = { data: T[]; nextCursor: string | null };
 async function allPages<T>(path: `/v1/${string}`): Promise<T[]> {
   const rows: T[] = [];
@@ -42,11 +60,27 @@ async function spaceId() {
 export async function getSession(): Promise<Session> {
   const { data, error } = await getSupabaseClient().auth.getSession();
   if (error) throw error;
-  return data.session ? get<Session>('/v1/session') : emptySession;
+  if (!data.session) { clearSessionCache(); return emptySession; }
+  const token = data.session.access_token;
+  if (sessionCache?.token === token) {
+    if (sessionCache.value && sessionCache.expiresAt > Date.now()) return sessionCache.value;
+    if (sessionCache.pending) return sessionCache.pending;
+  }
+  const pending = get<Session>('/v1/session');
+  sessionCache = { token, expiresAt: 0, pending };
+  try {
+    const value = await pending;
+    if (sessionCache?.token === token && sessionCache.pending === pending) sessionCache = { token, value, expiresAt: Date.now() + 10_000 };
+    return value;
+  } catch (cause) {
+    if (sessionCache?.pending === pending) clearSessionCache();
+    throw cause;
+  }
 }
 export async function signIn(email: string, password: string) {
   const { error } = await getSupabaseClient().auth.signInWithPassword({ email: email.trim(), password });
   if (error) throw error;
+  clearSessionCache();
   return mutate<Session>('/v1/session', 'PATCH', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
 }
 export async function register(name: string, email: string, password: string): Promise<{ needsConfirmation: boolean }> {
@@ -93,18 +127,25 @@ export async function updateEmail(email: string) {
 export async function signOut() {
   const { error } = await getSupabaseClient().auth.signOut();
   if (error) throw error;
+  clearSessionCache();
+  pendingMutations.clear();
   return emptySession;
 }
 export type SpaceInvite = { id: string; code: string; expiresAt: string; maxUses?: number };
 export type InviteRecord = { id: string; createdAt: string; expiresAt: string; maxUses: number; uses: number; revokedAt: string | null };
-export const createSpace = (name: string, kind: SpaceKind) => mutate<Session & { invite: SpaceInvite }>('/v1/spaces', 'POST', { name, kind });
+export async function createSpace(name: string, kind: SpaceKind): Promise<Session & { invite: SpaceInvite }> {
+  const body = { name: name.trim(), kind };
+  const created = await mutate<Session & { invite: SpaceInvite }>('/v1/spaces', 'POST', body, 30_000);
+  clearSessionCache();
+  return created;
+}
 export const listSpaces = () => allPages<{ id: string; name: string; kind: SpaceKind; role: 'admin' | 'member' }>('/v1/spaces');
-export const joinSpace = (code: string) => mutate<Session>('/v1/spaces/join', 'POST', { code: code.trim() });
+export async function joinSpace(code: string) { const joined = await mutate<Session>('/v1/spaces/join', 'POST', { code: code.trim() }); clearSessionCache(); return joined; }
 export type InvitePreview = { id: string; name: string; kind: SpaceKind; memberCount: number; invitedBy: string };
 export const previewInvite = (code: string) => mutate<InvitePreview>('/v1/spaces/join/preview', 'POST', { code: code.trim() });
-export const deleteSpace = (id: string, confirmName: string) => api().request<Session>(`/v1/spaces/${id}`, { method: 'DELETE', body: { confirmName }, idempotencyKey: idempotencyKey(), timeoutMs: 35_000 });
-export const leaveSpace = (id: string) => mutate<Session>(`/v1/spaces/${id}/leave`, 'POST');
-export const switchSpace = (id: string) => mutate<Session>('/v1/session', 'PATCH', { spaceId: id });
+export async function deleteSpace(id: string, confirmName: string) { const deleted = await mutate<Session>(`/v1/spaces/${id}`, 'DELETE', { confirmName }, 45_000); clearSessionCache(); return deleted; }
+export async function leaveSpace(id: string) { const left = await mutate<Session>(`/v1/spaces/${id}/leave`, 'POST'); clearSessionCache(); return left; }
+export async function switchSpace(id: string) { const switched = await mutate<Session>('/v1/session', 'PATCH', { spaceId: id }); clearSessionCache(); return switched; }
 export const updateSettings = (patch: Partial<Pick<Database, 'theme' | 'notifications' | 'lowStockAlerts'>>) => mutate<Session>('/v1/session', 'PATCH', patch);
 export async function listItems(): Promise<Item[]> { return allPages<Item>(`/v1/spaces/${await spaceId()}/items`); }
 export const getItem = (id: string) => get<Item>(`/v1/items/${id}`);
@@ -140,20 +181,32 @@ function itemBody(input: ItemInput) {
 }
 async function withPhoto(item: Item, input: ItemInput): Promise<Item> {
   if (!input.photoBase64) return item;
-  const mime = input.photoMime ?? 'image/jpeg';
-  const data = decode(input.photoBase64);
-  if (data.byteLength > 5_000_000) throw new Error('The item saved, but its photo exceeds the 5 MB limit. Choose a smaller photo.');
-  const upload = await mutate<{ id: string; path: string; token: string }>(`/v1/items/${item.id}/photo-uploads`, 'POST', { mime, size: data.byteLength });
-  const { error } = await getSupabaseClient().storage.from('item-photos').uploadToSignedUrl(upload.path, upload.token, data, { contentType: mime });
-  if (error) throw new Error(`The item saved, but photo upload failed: ${error.message}`);
-  return mutate<Item>(`/v1/items/${item.id}/photo-uploads/${upload.id}/complete`, 'POST');
+  try {
+    const mime = input.photoMime ?? 'image/jpeg';
+    const data = decode(input.photoBase64);
+    if (data.byteLength > 5_000_000) throw new Error('Photo exceeds the 5 MB limit. Choose a smaller photo.');
+    const upload = await mutate<{ id: string; path: string; token: string }>(`/v1/items/${item.id}/photo-uploads`, 'POST', { mime, size: data.byteLength });
+    const { error } = await getSupabaseClient().storage.from('item-photos').uploadToSignedUrl(upload.path, upload.token, data, { contentType: mime });
+    if (error) throw error;
+    return mutate<Item>(`/v1/items/${item.id}/photo-uploads/${upload.id}/complete`, 'POST');
+  } catch (error) {
+    throw new PhotoUploadError(item, error instanceof Error ? error.message : 'Please try again.');
+  }
+}
+export class PhotoUploadError extends Error {
+  constructor(readonly item: Item, reason: string) {
+    super(`Item saved, but photo upload failed: ${reason} Try saving again to retry the photo.`);
+    this.name = 'PhotoUploadError';
+  }
 }
 export async function addItem(input: ItemInput) { return withPhoto(await mutate<Item>(`/v1/spaces/${await spaceId()}/items`, 'POST', itemBody(input)), input); }
 export async function updateItem(id: string, input: ItemInput) { return withPhoto(await mutate<Item>(`/v1/items/${id}`, 'PUT', itemBody(input)), input); }
 export const assignCustodian = (id: string, memberId: string | null) => mutate<Item>(`/v1/items/${id}/custodian`, 'PATCH', { memberId });
 export const transferItemOwner = (id: string, memberId: string) => mutate<Item>(`/v1/items/${id}/owner`, 'PATCH', { memberId });
 export const archiveItem = (id: string) => mutate<{ id: string; deletedAt: string }>(`/v1/items/${id}`, 'DELETE');
-export const recordUsage = (id: string, amount: number, key?: string) => api().request<Item>(`/v1/items/${id}/use`, { method: 'POST', body: { amount }, idempotencyKey: key ?? idempotencyKey() });
+export const recordUsage = (id: string, amount: number, key?: string) => key
+  ? api().request<Item>(`/v1/items/${id}/use`, { method: 'POST', body: { amount }, idempotencyKey: key })
+  : mutate<Item>(`/v1/items/${id}/use`, 'POST', { amount });
 export const restockItem = (id: string, amount: number) => mutate<Item>(`/v1/items/${id}/restock`, 'POST', { amount });
 export const undoQuantity = (id: string, activityId: string) => mutate<Item>(`/v1/items/${id}/quantity-undo`, 'POST', { activityId });
 export const requestBorrow = (id: string, dueAt?: string, note?: string) => mutate<Item>(`/v1/items/${id}/requests`, 'POST', { ...(dueAt ? { dueAt } : {}), ...(note?.trim() ? { note: note.trim() } : {}) });

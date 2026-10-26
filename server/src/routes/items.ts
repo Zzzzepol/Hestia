@@ -6,7 +6,7 @@ import { amountBody, empty, idParams, itemInput, itemQuery, pageQuery, uuid } fr
 import { fail } from '../errors.js';
 import { lockItem, mutation, type Tx } from '../idempotency.js';
 import { keeper, membership, visibleItem, visibleWhere } from '../policy.js';
-import { activityView, itemView } from '../serialize.js';
+import { activityView, itemView, itemViewFromRelations } from '../serialize.js';
 import { notifyUsers } from '../notifications.js';
 
 export const items = Router();
@@ -42,8 +42,15 @@ items.get('/spaces/:spaceId/items', async (req, res) => {
     ...(q.availability === 'available' ? { kind: 'returnable', damaged: false, requests: { none: { state: { in: ['Reserved', 'Borrowed', 'ReadyToReturn'] } } } } : {}),
     ...(q.availability === 'unavailable' ? { kind: 'returnable' } : {}),
   };
-  const rows = await prisma.item.findMany({ where, orderBy: { id: 'asc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: uuid.parse(q.cursor) }, skip: 1 } : {}) });
-  res.json({ data: await Promise.all(rows.slice(0, q.limit).map(x => itemView(x, req.actorId))), nextCursor: rows.length > q.limit ? rows[q.limit - 1]?.id : null });
+  const rows = await prisma.item.findMany({
+    where, orderBy: { id: 'asc' }, take: q.limit + 1,
+    ...(q.cursor ? { cursor: { id: uuid.parse(q.cursor) }, skip: 1 } : {}),
+    include: {
+      history: { orderBy: [{ at: 'desc' }, { id: 'desc' }], take: 100 },
+      requests: { orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }], take: 100 },
+    },
+  });
+  res.json({ data: rows.slice(0, q.limit).map(x => itemViewFromRelations(x, req.actorId, x.history, x.requests)), nextCursor: rows.length > q.limit ? rows[q.limit - 1]?.id : null });
 });
 items.get('/items/:itemId', async (req, res) => {
   const { itemId } = idParams.parse(req.params);

@@ -20,6 +20,10 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _ne
   if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
     res.status(409).json({ code: 'CONFLICT', message: 'This resource changed. Refresh and try again.' }); return;
   }
+  if (error instanceof Prisma.PrismaClientInitializationError || error instanceof Prisma.PrismaClientKnownRequestError && ['P1001', 'P2024'].includes(error.code)) {
+    console.error('Database connection unavailable:', error);
+    res.status(503).json({ code: 'DATABASE_UNAVAILABLE', message: 'Could not connect to the database. Try again shortly.' }); return;
+  }
   // The database, stack, and provider messages stay in server logs.
   console.error(error);
   res.status(503).json({ code: 'TEMPORARY', message: 'The service is temporarily unavailable.' });

@@ -77,6 +77,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL integration', () => 
     await request(app).post('/v1/spaces').set(as(admin)).set('Idempotency-Key', key).send({ name: 'Changed input' }).expect(409).expect(r => expect(r.body.code).toBe('IDEMPOTENCY_REUSED'));
   });
 
+  it('switches the selected Space and saves profile settings independently', async () => {
+    const alternate = await prisma.space.create({ data: { name: 'Alternate Space' } });
+    await prisma.membership.create({ data: { spaceId: alternate.id, userId: admin, role: 'admin' } });
+    await request(app).patch('/v1/session').set(as(admin)).set(idem()).send({ spaceId: alternate.id }).expect(200)
+      .expect(r => expect(r.body.spaceId).toBe(alternate.id));
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: admin } })).selectedSpaceId).toBe(alternate.id);
+    await request(app).patch('/v1/session').set(as(admin)).set(idem()).send({ lowStockAlerts: false }).expect(200)
+      .expect(r => expect(r.body.spaceId).toBe(alternate.id));
+    await request(app).patch('/v1/session').set(as(admin)).set(idem()).send({ spaceId: null }).expect(200)
+      .expect(r => expect(r.body.spaceId).toBeNull());
+  });
+
   it('previews and joins another Space, then lets only its admin delete it', async () => {
     const created = await request(app).post('/v1/spaces').set(as(admin)).set(idem()).send({ name: 'Temporary household', kind: 'household' }).expect(201);
     const temporaryId = created.body.spaceId as string;

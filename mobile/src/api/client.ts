@@ -45,7 +45,7 @@ export function createApiClient({ baseUrl, getAccessToken, fetcher = fetch }: Cl
       if (!token) throw new ApiError('Sign in is required.', 401, 'AUTH_REQUIRED');
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
+      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? (method === 'GET' ? 20_000 : 30_000));
       const onAbort = () => controller.abort();
       options.signal?.addEventListener('abort', onAbort, { once: true });
 

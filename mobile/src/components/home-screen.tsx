@@ -4,6 +4,7 @@ import { Image, Platform, Pressable, ScrollView, Text, useWindowDimensions, View
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
 import type { Item } from '@/types';
+import { BrandWordmark } from '@/components/brand-logo';
 
 const plum = '#3F2B42';
 const cream = '#F3E8E2';
@@ -53,6 +54,7 @@ export function HomeScreen({ firstName, spaceName, attention, low, showLowStock,
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const heroHeight = Math.max(215, insets.top + 175);
+  const brandWidth = width < 350 ? 58 : width < 390 ? 80 : 98;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   return <ScrollView style={{ flex: 1, backgroundColor: cream }} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
@@ -65,12 +67,13 @@ export function HomeScreen({ firstName, spaceName, attention, low, showLowStock,
         <Ellipse cx="340" cy="170" rx="20" ry="15" fill="#59415D" />
         <Path d="M0 222 C85 176 159 191 226 222 C294 257 341 257 390 219 L390 250 L0 250 Z" fill={cream} />
       </Svg>
+      <BrandWordmark width={brandWidth} style={{ position: 'absolute', top: insets.top + 16, left: 23, borderRadius: 4 }} />
       <View style={{ position: 'absolute', top: insets.top + 13, left: 24, right: 24, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
         <Pressable accessibilityRole="button" accessibilityLabel={notificationCount ? `Notifications, ${notificationCount} need attention` : 'Notifications'} onPress={onNotifications} style={({ pressed }) => ({ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', opacity: pressed ? .72 : 1 })}>
           <Ionicons name="notifications-outline" size={26} color={cream} />
           {notificationCount > 0 && <View style={{ position: 'absolute', top: 0, right: 0, minWidth: 19, height: 19, paddingHorizontal: 3, borderRadius: 10, backgroundColor: '#D9952A', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: plum, fontSize: 11, fontWeight: '800' }}>{notificationCount > 99 ? '99+' : notificationCount}</Text></View>}
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Space: ${spaceName}`} onPress={onSpace} style={({ pressed }) => ({ minHeight: 44, maxWidth: Math.min(width * .52, 220), borderColor: '#BFAEBF', borderWidth: 1.5, borderRadius: 25, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 5, opacity: pressed ? .75 : 1 })}><Text numberOfLines={1} style={{ flexShrink: 1, color: cream, fontWeight: '700', fontSize: 14 }}>{spaceName}</Text><Ionicons name="chevron-down" size={13} color={cream} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Space: ${spaceName}`} onPress={onSpace} style={({ pressed }) => ({ minHeight: 44, maxWidth: Math.min(width * .45, 180), borderColor: '#BFAEBF', borderWidth: 1.5, borderRadius: 25, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 5, opacity: pressed ? .75 : 1 })}><Text numberOfLines={1} style={{ flexShrink: 1, color: cream, fontWeight: '700', fontSize: 14 }}>{spaceName}</Text><Ionicons name="chevron-down" size={13} color={cream} /></Pressable>
       </View>
       <View style={{ position: 'absolute', left: 25, right: 25, bottom: 61 }}><Text style={{ color: cream, fontSize: 14, fontWeight: '600' }}>{greeting}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color: cream, fontSize: 40, lineHeight: 46, fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' }) }}>{firstName}</Text></View>
     </View>

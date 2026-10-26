@@ -4,17 +4,17 @@
     "slug": "hestia",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/hestia-app-icon.png",
     "scheme": "hestia",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/hestia-app-icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#3F2B42",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#30212E",
+        "foregroundImage": "./assets/images/hestia-android-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
@@ -29,9 +29,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F3E8E2",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#30212E",
+          "image": "./assets/images/hestia-wordmark-transparent.png",
+          "imageWidth": 280
         }
       ],
       "@react-native-community/datetimepicker"

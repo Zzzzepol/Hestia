@@ -9,6 +9,24 @@ declare global { namespace Express { interface Request { actorId: string } } }
 
 const issuer = `${config.SUPABASE_URL.replace(/\/$/, '')}/auth/v1`;
 const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+const ensuredUsers = new Map<string, number>();
+const ensuringUsers = new Map<string, Promise<void>>();
+const ensureTtlMs = 5 * 60_000;
+
+async function ensureUser(actor: { id: string; name?: string }) {
+  if ((ensuredUsers.get(actor.id) ?? 0) > Date.now()) return;
+  let pending = ensuringUsers.get(actor.id);
+  if (!pending) {
+    pending = prisma.user.upsert({
+      where: { id: actor.id },
+      create: { id: actor.id, ...(actor.name ? { name: actor.name } : {}) },
+      update: {},
+    }).then(() => { ensuredUsers.set(actor.id, Date.now() + ensureTtlMs); })
+      .finally(() => { ensuringUsers.delete(actor.id); });
+    ensuringUsers.set(actor.id, pending);
+  }
+  await pending;
+}
 
 export async function verifyAccessToken(token: string): Promise<{ id: string; name?: string }> {
   try {
@@ -33,7 +51,7 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
     if (!token) fail(401, 'AUTH_REQUIRED', 'Sign in is required.');
     const actor = await verifyAccessToken(token!);
     req.actorId = actor.id;
-    await prisma.user.upsert({ where: { id: actor.id }, create: { id: actor.id, ...(actor.name ? { name: actor.name } : {}) }, update: {} });
+    await ensureUser(actor);
     next();
   } catch (error) { next(error); }
 };

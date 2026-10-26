@@ -3,14 +3,11 @@ import { prisma } from './db.js';
 
 const states: Record<string, string> = { ReadyToReturn: 'Ready to return', LostOrDamaged: 'Lost or damaged' };
 export const stateName = (state: string) => states[state] ?? state;
-export const memberView = (m: Membership & { user: User }) => ({ id: m.userId, name: m.user.name, initials: m.user.name.split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join(''), role: m.role });
+export const userMemberView = (user: User, role: Membership['role']) => ({ id: user.id, name: user.name, initials: user.name.split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join(''), role });
+export const memberView = (m: Membership & { user: User }) => userMemberView(m.user, m.role);
 export const activityView = (a: Activity) => ({ id: a.id, at: a.at.toISOString(), actorId: a.actorId, kind: a.kind, ...(a.note ? { note: a.note } : {}), ...(a.before !== null ? { before: a.before, after: a.after } : {}) });
 export const loanView = (x: BorrowRequest) => ({ id: x.id, borrowerId: x.borrowerId, state: stateName(x.state), requestedAt: x.requestedAt.toISOString(), ...(x.dueAt ? { dueAt: x.dueAt.toISOString() } : {}), ...(x.note ? { note: x.note } : {}) });
-export async function itemView(item: Item, actorId: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
-  const [history, requests] = await Promise.all([
-    db.activity.findMany({ where: { itemId: item.id }, orderBy: [{ at: 'desc' }, { id: 'desc' }], take: 100 }),
-    db.borrowRequest.findMany({ where: { itemId: item.id }, orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }], take: 100 }),
-  ]);
+export function itemViewFromRelations(item: Item, actorId: string, history: Activity[], requests: BorrowRequest[]) {
   const active = requests.find(r => ['Reserved', 'Borrowed', 'ReadyToReturn'].includes(r.state));
   const ownPending = requests.find(r => r.state === 'Requested' && r.borrowerId === actorId);
   const keeperPending = requests.find(r => r.state === 'Requested' && [item.ownerId, item.custodianId].includes(actorId));
@@ -21,6 +18,13 @@ export async function itemView(item: Item, actorId: string, db: Prisma.Transacti
     ...(item.quantity !== null ? { quantity: item.quantity } : {}), ...(item.unit ? { unit: item.unit } : {}),
     ...(item.lowThreshold !== null ? { lowThreshold: item.lowThreshold } : {}), ...(chosen ? { loan: loanView(chosen) } : {}),
     history: history.map(activityView) };
+}
+export async function itemView(item: Item, actorId: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
+  const [history, requests] = await Promise.all([
+    db.activity.findMany({ where: { itemId: item.id }, orderBy: [{ at: 'desc' }, { id: 'desc' }], take: 100 }),
+    db.borrowRequest.findMany({ where: { itemId: item.id }, orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }], take: 100 }),
+  ]);
+  return itemViewFromRelations(item, actorId, history, requests);
 }
 export async function sessionView(actorId: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
   const user = await db.user.findUniqueOrThrow({ where: { id: actorId } });

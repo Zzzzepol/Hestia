@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { Platform, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BrandWordmark } from '@/components/brand-logo';
 
 const plum = '#3F2B42';
 const overlay = '#4B374E';
@@ -28,6 +30,7 @@ export function BubbleMenu({ activeTab, onSelect, onOpenChange, home }: { active
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(800);
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const reveal = useSharedValue(0);
   const face = useSharedValue(0);
@@ -63,6 +66,7 @@ export function BubbleMenu({ activeTab, onSelect, onOpenChange, home }: { active
     <View pointerEvents={open ? 'auto' : 'none'} aria-hidden={!open} accessibilityElementsHidden={!open} accessibilityViewIsModal={open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, overflow: 'hidden' }}>
       <Animated.View style={[{ position: 'absolute', width: diameter, height: diameter, borderRadius: diameter / 2, left: (width - diameter) / 2, top: centerY - diameter / 2, backgroundColor: overlay }, circle]} />
       <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 32, paddingBottom: 114 }, menu]}>
+        {height > 640 && <BrandWordmark width={172} style={{ position: 'absolute', top: insets.top + 38, borderRadius: 7 }} />}
         <View style={{ width: '100%', maxWidth: 310, borderRadius: 27, backgroundColor: cream, padding: 6 }}>
           {entries.map(({ tab, icon }) => <Pressable key={tab} accessibilityRole="button" accessibilityLabel={tab} accessibilityState={{ selected: activeTab === tab }} onPress={() => select(tab)} style={({ pressed }) => ({ minHeight: 55, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 17, paddingHorizontal: 18, backgroundColor: activeTab === tab ? plum : pressed ? '#E7DAD4' : 'transparent' })}><Ionicons name={icon} size={21} color={activeTab === tab ? cream : plum} /><Text style={{ color: activeTab === tab ? cream : plum, fontSize: 17, fontWeight: '700' }}>{tab}</Text></Pressable>)}
         </View>
