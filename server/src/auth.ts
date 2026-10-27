@@ -8,7 +8,7 @@ import { z } from 'zod';
 declare global { namespace Express { interface Request { actorId: string } } }
 
 const issuer = `${config.SUPABASE_URL.replace(/\/$/, '')}/auth/v1`;
-const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`), { timeoutDuration: 12000 });
 const ensuredUsers = new Map<string, number>();
 const ensuringUsers = new Map<string, Promise<void>>();
 const ensureTtlMs = 5 * 60_000;
@@ -41,7 +41,12 @@ export async function verifyAccessToken(token: string): Promise<{ id: string; na
     const displayName = metadata && typeof metadata === 'object' && 'display_name' in metadata ? metadata.display_name : undefined;
     const name = z.string().trim().min(1).max(100).safeParse(displayName);
     return { id: z.uuid().parse(payload.sub), ...(name.success ? { name: name.data } : {}) };
-  } catch { return fail(401, 'AUTH_REQUIRED', 'Sign in is required.'); }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ERR_JWKS_TIMEOUT') {
+      return fail(503, 'AUTH_SERVICE_UNAVAILABLE', 'Sign-in verification is temporarily unavailable. Try again shortly.');
+    }
+    return fail(401, 'AUTH_REQUIRED', 'Sign in is required.');
+  }
 }
 
 export const authenticate: RequestHandler = async (req, _res, next) => {

@@ -17,6 +17,7 @@ type RequestOptions = {
   idempotencyKey?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  accessToken?: string;
 };
 
 type ClientOptions = {
@@ -41,7 +42,7 @@ export function createApiClient({ baseUrl, getAccessToken, fetcher = fetch }: Cl
         throw new Error('Mutations require an idempotency key.');
       }
 
-      const token = await getAccessToken();
+      const token = options.accessToken ?? await getAccessToken();
       if (!token) throw new ApiError('Sign in is required.', 401, 'AUTH_REQUIRED');
 
       const controller = new AbortController();

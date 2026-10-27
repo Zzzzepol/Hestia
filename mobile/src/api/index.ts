@@ -2,6 +2,7 @@ import { ApiError, createApiClient } from './client';
 import { decode } from 'base64-arraybuffer';
 import { getSupabaseClient } from '@/lib/supabase';
 import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import type { BorrowState, Database, Item, ItemInput, Member, Session, Space, SpaceKind } from '@/types';
 
@@ -11,11 +12,24 @@ let sessionCache: { token: string; value?: Session; expiresAt: number; pending?:
 const pendingMutations = new Map<string, string>();
 const clearSessionCache = () => { sessionCache = null; };
 let client: ReturnType<typeof createApiClient> | undefined;
+const privateIp = (host: string) => /^(?:10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)$/.test(host);
+function apiBaseUrl() {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (!configured) throw new Error('Set EXPO_PUBLIC_API_BASE_URL in mobile/.env to your running Hestia server.');
+  if (!__DEV__ || Platform.OS === 'web' || !Constants.expoConfig?.hostUri) return configured;
+  try {
+    const url = new URL(configured);
+    const metroHost = new URL(`http://${Constants.expoConfig.hostUri}`).hostname;
+    if (url.protocol === 'http:' && privateIp(url.hostname) && privateIp(metroHost)) {
+      url.hostname = metroHost;
+      return url.toString().replace(/\/$/, '');
+    }
+  } catch { /* Use the configured URL if Expo has no LAN host. */ }
+  return configured;
+}
 function api() {
   if (client) return client;
-  const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-  if (!baseUrl) throw new Error('Set EXPO_PUBLIC_API_BASE_URL in mobile/.env to your running Hestia server.');
-  client = createApiClient({ baseUrl, getAccessToken: async () => {
+  client = createApiClient({ baseUrl: apiBaseUrl(), getAccessToken: async () => {
     const { data, error } = await getSupabaseClient().auth.getSession();
     if (error) throw error;
     return data.session?.access_token ?? null;
@@ -66,7 +80,7 @@ export async function getSession(): Promise<Session> {
     if (sessionCache.value && sessionCache.expiresAt > Date.now()) return sessionCache.value;
     if (sessionCache.pending) return sessionCache.pending;
   }
-  const pending = get<Session>('/v1/session');
+  const pending = api().request<Session>('/v1/session', { accessToken: token });
   sessionCache = { token, expiresAt: 0, pending };
   try {
     const value = await pending;

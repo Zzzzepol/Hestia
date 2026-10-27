@@ -34,7 +34,7 @@ spaces.patch('/session', mutation(async (tx, req) => {
 }));
 spaces.get('/spaces', async (req, res) => {
   const { cursor, limit } = pageQuery.parse(req.query);
-  const rows = await prisma.membership.findMany({ where: { userId: req.actorId }, include: { space: true }, orderBy: { spaceId: 'asc' }, take: limit + 1, ...(cursor ? { cursor: { spaceId_userId: { spaceId: uuid.parse(cursor), userId: req.actorId } }, skip: 1 } : {}) });
+  const rows = await prisma.membership.findMany({ where: { userId: req.actorId, space: { archivedAt: null } }, include: { space: true }, orderBy: { spaceId: 'asc' }, take: limit + 1, ...(cursor ? { cursor: { spaceId_userId: { spaceId: uuid.parse(cursor), userId: req.actorId } }, skip: 1 } : {}) });
   res.json({ data: rows.slice(0, limit).map(x => ({ id: x.spaceId, name: x.space.name, kind: x.space.kind, role: x.role })), nextCursor: rows.length > limit ? rows[limit - 1]?.spaceId : null });
 });
 spaces.post('/spaces', mutation(async (tx, req) => {

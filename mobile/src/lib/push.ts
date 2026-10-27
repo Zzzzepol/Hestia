@@ -6,7 +6,9 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { registerDevice, unregisterDevice } from '@/api';
 
-Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
+}
 
 const deviceIdKey = (userId: string) => `hestia:push-device-id:${userId}`;
 
@@ -33,6 +35,7 @@ export async function disablePhoneNotifications(userId: string) {
 }
 
 export function onPhoneNotificationOpen(open: (itemId: string | null) => void) {
+  if (Platform.OS === 'web') return { remove: () => {} };
   const handle = (response: Notifications.NotificationResponse) => {
     const itemId = response.notification.request.content.data?.itemId;
     open(typeof itemId === 'string' ? itemId : null);
