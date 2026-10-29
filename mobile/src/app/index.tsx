@@ -279,13 +279,14 @@ export default function App() {
     </CoreScreen>;
   }
   else if (tab === 'Home') {
-    const attention = items.filter(i => i.loan && (['Requested', 'Ready to return'].includes(i.loan.state) && keeper(i) || ['Borrowed', 'Ready to return'].includes(i.loan.state) && i.loan.borrowerId === db.userId && !!i.loan.dueAt && Date.parse(i.loan.dueAt) <= reminderNow + 86400000));
+    const attention = items.filter(i => i.loan && (['Requested', 'Ready to return'].includes(i.loan.state) && keeper(i) || i.loan.state === 'Borrowed' && i.loan.borrowerId === db.userId && !!i.loan.dueAt && Date.parse(i.loan.dueAt) <= reminderNow + 86400000));
     const low = items.filter(i => itemStatus(i) === 'Low stock');
     const loans = items.filter(i => i.loan && ['Reserved', 'Borrowed', 'Ready to return'].includes(i.loan.state));
-    const dueCount = db.notifications ? items.filter(i => i.kind === 'returnable' && i.loan?.dueAt && ['Borrowed', 'Ready to return'].includes(i.loan.state) && (keeper(i) || i.loan.borrowerId === db.userId) && Date.parse(i.loan.dueAt) <= reminderNow + 2 * 86400000).length : 0;
+    const dueCount = db.notifications ? items.filter(i => i.kind === 'returnable' && i.loan?.dueAt && ['Borrowed', 'Ready to return'].includes(i.loan.state) && (keeper(i) || i.loan.state === 'Borrowed' && i.loan.borrowerId === db.userId) && Date.parse(i.loan.dueAt) <= reminderNow + 2 * 86400000).length : 0;
     const requestCount = (requestsQ.data ?? []).filter(r => r.state === 'Requested' && items.some(i => i.id === r.itemId && keeper(i))).length;
     const notificationCount = Math.max(dueCount + requestCount + (db.lowStockAlerts ? low.length : 0), (notificationsQ.data ?? []).filter(row => !row.readAt).length);
     content = <HomeScreen
+      scheme={scheme}
       firstName={me?.name?.trim().split(/\s+/)[0] || 'Friend'}
       spaceName={spaceQ.data?.name ?? 'Your Space'}
       attention={attention}
@@ -294,6 +295,13 @@ export default function App() {
       loans={loans}
       memberName={name}
       notificationCount={notificationCount}
+      itemCount={items.length}
+      loading={itemsQ.isLoading}
+      loadError={itemsQ.isError}
+      offline={offline}
+      currentUserId={db.userId}
+      refreshing={itemsQ.isRefetching}
+      onRefresh={() => { void refresh(); }}
       onNotifications={() => { go('Reminders'); if (!offline) { void remindersQ.refetch(); void requestsQ.refetch(); void notificationsQ.refetch(); } }}
       onSearch={() => go('Items')}
       onSpace={() => setSpacePicker(true)}
@@ -305,13 +313,14 @@ export default function App() {
         else if (i.loan?.state === 'Borrowed' && i.loan.borrowerId === db.userId) act(() => api.readyToReturn(i.id));
       }}
       onRestock={i => { setSelectedId(i.id); setAmount(1); setQuantityMode('restock'); setSheet('quantity'); }}
+      onAdd={() => go('Add')}
     />;
   }
   else if (tab === 'Items') {
     const categories = ['All', ...new Set(items.map(i => i.category).filter(Boolean))];
     const locations = ['All', ...new Set(items.map(i => i.location).filter(Boolean))];
     const shown = items.filter(i =>
-      i.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()) &&
+      [i.name, i.category, i.location].some(value => value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) &&
       (kindFilter === 'all' || i.kind === kindFilter) &&
       (category === 'All' || i.category === category) &&
       (location === 'All' || i.location === location) &&
@@ -321,14 +330,16 @@ export default function App() {
       style={{ flex: 1, backgroundColor: c.background }}
       data={shown}
       keyExtractor={i => i.id}
-      renderItem={({ item }) => <View style={{ marginHorizontal: 20 }}><CoreCard scheme={scheme}><CoreItemRow item={item} status={itemStatus(item)} subtitle={`${item.location || 'No location'} · ${item.category || 'Uncategorized'}`} scheme={scheme} onPress={() => setSelectedId(item.id)} /></CoreCard></View>}
+      renderItem={({ item }) => <View style={{ width: '100%', maxWidth: 900, alignSelf: 'center', paddingHorizontal: 20 }}><CoreCard scheme={scheme}><CoreItemRow item={item} status={itemStatus(item)} subtitle={`${item.location || 'No location'} · ${item.category || 'Uncategorized'}`} scheme={scheme} onPress={() => setSelectedId(item.id)} /></CoreCard></View>}
       ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
       contentContainerStyle={{ paddingBottom: 122, flexGrow: 1 }}
+      refreshing={itemsQ.isRefetching}
+      onRefresh={() => { void refresh(); }}
       ListHeaderComponent={<>
         <CoreHeader title="Items" variant="items" scheme={scheme} onBack={() => go('Home')} />
         {offline && <ItemsOfflineBanner />}
-        <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14, gap: 12 }}>
-          <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}><Ionicons name="search" size={21} color={c.text} /><TextInput accessibilityLabel="Search items" value={search} onChangeText={setSearch} placeholder="Search items" placeholderTextColor={c.muted} returnKeyType="search" style={{ flex: 1, minHeight: 48, color: c.text, fontSize: 15 }} /></View>
+        <View style={{ width: '100%', maxWidth: 900, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14, gap: 12 }}>
+          <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.surface, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}><Ionicons name="search" size={21} color={c.text} /><TextInput accessibilityLabel="Search items" value={search} onChangeText={setSearch} placeholder="Search name, category or location" placeholderTextColor={c.muted} returnKeyType="search" style={{ flex: 1, minHeight: 48, color: c.text, fontSize: 16 }} />{search.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch('')} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="close-circle" size={21} color={c.muted} /></Pressable>}</View>
           <CoreSegment scheme={scheme} value={kindFilter} onChange={setKindFilter} options={[{ label: 'All', value: 'all' }, { label: 'Consumables', value: 'consumable' }, { label: 'Returnables', value: 'returnable' }]} />
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showFilters }} onPress={() => setShowFilters(value => !value)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={{ color: c.text, fontSize: 14, fontWeight: '700' }}>Filters{filter !== 'All' || category !== 'All' || location !== 'All' ? ' · Active' : ''}</Text><Ionicons name={showFilters ? 'chevron-up' : 'options-outline'} size={19} color={c.text} /></Pressable>
           {showFilters && <CoreCard scheme={scheme} inset={14}><View style={{ gap: 10 }}><Text style={{ color: c.text, fontWeight: '700' }}>Status</Text>{choices(['All', 'Mine', 'Available', 'Borrowed', 'Low stock'], filter, setFilter)}<Text style={{ color: c.text, fontWeight: '700' }}>Category</Text>{choices(categories, category, setCategory)}<Text style={{ color: c.text, fontWeight: '700' }}>Location</Text>{choices(locations, location, setLocation)}</View></CoreCard>}
@@ -370,11 +381,11 @@ export default function App() {
     const incoming = visible.filter(r => ['Requested', 'Reserved', 'Ready to return'].includes(r.state) && items.some(i => i.id === r.itemId && keeper(i))).sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
     const mine = visible.filter(r => r.borrowerId === db.userId).sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
     const requestRow = (r: api.BorrowRequest, inbox: boolean) => <CoreCard key={r.id} scheme={scheme} inset={11}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`View ${r.itemName}`} onPress={() => setSelectedId(r.itemId)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 48, opacity: pressed ? .7 : 1 })}>
         <View style={{ width: 47, height: 47, borderRadius: 13, backgroundColor: c.surfaceAlt }} />
         <View style={{ flex: 1, minWidth: 0 }}><Text numberOfLines={1} style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>{r.itemName}</Text><Text numberOfLines={2} style={{ color: c.muted, fontSize: 12, marginTop: 3 }}>{inbox ? name(r.borrowerId) : r.state === 'Requested' ? `Waiting for ${name(items.find(item => item.id === r.itemId)?.custodianId ?? items.find(item => item.id === r.itemId)?.ownerId)}` : `From ${name(items.find(item => item.id === r.itemId)?.ownerId)}`}{r.dueAt && r.state !== 'Requested' ? ` · due ${new Date(r.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</Text></View>
         <CoreStatus status={r.state === 'Borrowed' && r.dueAt && Date.parse(r.dueAt) < reminderNow ? 'Overdue' : r.state === 'Requested' ? 'Pending' : r.state} scheme={scheme} />
-      </View>
+      </Pressable>
       {inbox && !!r.note && <Text style={{ color: c.muted, fontSize: 12, marginTop: 8 }} numberOfLines={2}>{r.note}</Text>}
       {inbox && r.state === 'Requested' && <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}><View style={{ flex: 1 }}><Button label="Approve" scheme={scheme} small onPress={() => act(() => api.actOnRequest(r.id, 'approve'))} /></View><View style={{ flex: 1 }}><Button label="Reject" kind="secondary" scheme={scheme} small onPress={() => confirm('Reject request?', 'The borrower will see this decision.', () => api.actOnRequest(r.id, 'reject'))} /></View></View>}
       {inbox && r.state === 'Reserved' && <View style={{ marginTop: 14 }}><Button label="Confirm handover" scheme={scheme} small onPress={() => act(() => api.actOnRequest(r.id, 'handover'))} /></View>}
@@ -382,7 +393,7 @@ export default function App() {
       {!inbox && r.state === 'Requested' && <Pressable accessibilityRole="button" accessibilityLabel={`Cancel request for ${r.itemName}`} onPress={() => act(() => api.actOnRequest(r.id, 'cancel'))} style={({ pressed }) => ({ minHeight: 41, marginTop: 12, borderRadius: 23, borderWidth: 1.3, borderColor: c.text, alignItems: 'center', justifyContent: 'center', opacity: pressed ? .7 : 1 })}><Text style={{ color: c.text, fontSize: 13, fontWeight: '700' }}>Cancel request</Text></Pressable>}
       {!inbox && r.state === 'Borrowed' && <View style={{ marginTop: 14 }}><Button label="Mark ready to return" scheme={scheme} small onPress={() => act(() => api.actOnRequest(r.id, 'ready'))} /></View>}
     </CoreCard>;
-    content = <CoreScreen title={requestSegment === 'mine' ? 'My requests' : 'Requests'} variant={requestSegment === 'mine' ? 'my-requests' : 'requests'} scheme={scheme} onBack={() => go('Home')}>
+    content = <CoreScreen title={requestSegment === 'mine' ? 'My requests' : 'Requests'} variant={requestSegment === 'mine' ? 'my-requests' : 'requests'} scheme={scheme} onBack={() => go('Home')} refreshing={requestsQ.isRefetching} onRefresh={() => { void refresh(); }}>
       <CoreSegment scheme={scheme} value={requestSegment} onChange={setRequestSegment} options={[{ label: `To approve${incoming.length ? ` · ${incoming.length}` : ''}`, value: 'approve' }, { label: 'My requests', value: 'mine' }]} />
       {requestsQ.isLoading ? <Skeleton scheme={scheme} /> : requestsQ.isError ? <EmptyState title="Requests could not load" body={message(requestsQ.error)} action="Try again" onPress={() => requestsQ.refetch()} scheme={scheme} /> : requestSegment === 'approve' ? incoming.length ? incoming.map(r => requestRow(r, true)) : <EmptyState title="No requests waiting" body="You are caught up." action="Browse items" onPress={() => go('Items')} scheme={scheme} /> : mine.length ? mine.map(r => requestRow(r, false)) : <EmptyState title="No requests yet" body="Find something to borrow." action="Find an item" onPress={() => go('Items')} scheme={scheme} />}
     </CoreScreen>;
@@ -390,7 +401,7 @@ export default function App() {
   else if (tab === 'Reminders') {
     const now = reminderNow;
     const ownDueIds = new Set((remindersQ.data ?? []).map(reminder => reminder.itemId));
-    const dueItems = items.filter(item => item.kind === 'returnable' && item.loan?.dueAt && ['Borrowed', 'Ready to return'].includes(item.loan.state) && (keeper(item) || ownDueIds.has(item.id) || remindersQ.isError && item.loan.borrowerId === db.userId));
+    const dueItems = items.filter(item => item.kind === 'returnable' && item.loan?.dueAt && ['Borrowed', 'Ready to return'].includes(item.loan.state) && (keeper(item) || item.loan.state === 'Borrowed' && (ownDueIds.has(item.id) || remindersQ.isError && item.loan.borrowerId === db.userId)));
     const today: ReminderEntry[] = dueItems.filter(item => Date.parse(item.loan!.dueAt!) <= now + 2 * 86400000).sort((a, b) => Date.parse(a.loan!.dueAt!) - Date.parse(b.loan!.dueAt!)).map(item => {
       const due = Date.parse(item.loan!.dueAt!); const late = due < now; const days = Math.max(1, Math.ceil((now - due) / 86400000));
       const when = new Date(due).toLocaleDateString(undefined, { weekday: 'short' });
@@ -417,9 +428,9 @@ export default function App() {
       } };
       (new Date(row.createdAt).toDateString() === new Date(now).toDateString() ? filteredToday : filteredEarlier).push(entry);
     });
-    content = <RemindersScreen scheme={scheme} today={filteredToday} earlier={filteredEarlier} loading={itemsQ.isLoading || requestsQ.isLoading || remindersQ.isLoading || notificationsQ.isLoading} onBack={() => go('Home')} />;
+    content = <RemindersScreen scheme={scheme} today={filteredToday} earlier={filteredEarlier} loading={itemsQ.isLoading || requestsQ.isLoading || remindersQ.isLoading || notificationsQ.isLoading} loadError={requestsQ.isError || remindersQ.isError || notificationsQ.isError} refreshing={requestsQ.isRefetching || remindersQ.isRefetching || notificationsQ.isRefetching} onRefresh={() => { void refresh(); }} onBack={() => go('Home')} />;
   }
-  else if (tab === 'Space') content = <CoreScreen title={spaceQ.data?.name ?? 'Your Space'} variant="space" scheme={scheme} onBack={() => go('Home')}>
+  else if (tab === 'Space') content = <CoreScreen title={spaceQ.data?.name ?? 'Your Space'} variant="space" scheme={scheme} onBack={() => go('Home')} refreshing={spaceQ.isRefetching} onRefresh={() => { void refresh(); }}>
     {spaceQ.isLoading ? <Skeleton scheme={scheme} /> : spaceQ.isError ? <EmptyState title="Space could not load" body={message(spaceQ.error)} action="Try again" onPress={() => spaceQ.refetch()} scheme={scheme} /> : <>
       {myRole === 'admin' && <CoreCard scheme={scheme} inset={18}>
         <Text style={{ color: c.muted, fontSize: 12, fontWeight: '700' }}>Invite code</Text>

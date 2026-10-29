@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
-import { Image, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Image, Platform, Pressable, RefreshControl, ScrollView, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
 import type { Item } from '@/types';
@@ -29,7 +29,8 @@ type CoreVariant = 'space' | 'items' | 'add' | 'detail' | 'requests' | 'profile'
 
 export function CoreHeader({ title, onBack, scheme, variant = 'items' }: { title: string; onBack: () => void; scheme: Scheme; variant?: CoreVariant }) {
   const insets = useSafeAreaInsets();
-  const height = insets.top + 146;
+  const { fontScale } = useWindowDimensions();
+  const height = insets.top + Math.max(146, fontScale > 1.25 ? 176 : 146);
   return <View style={{ height, backgroundColor: core.plum }}>
     <Svg width="100%" height={height} viewBox="0 0 390 210" preserveAspectRatio="none" style={{ position: 'absolute' }}>
       <Rect width="390" height="210" fill={core.plum} />
@@ -53,10 +54,10 @@ export function CoreHeader({ title, onBack, scheme, variant = 'items' }: { title
   </View>;
 }
 
-export function CoreScreen({ title, variant, onBack, scheme, children }: { title: string; variant?: CoreVariant; onBack: () => void; scheme: Scheme; children: ReactNode }) {
-  return <ScrollView style={{ flex: 1, backgroundColor: colors[scheme].background }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 122 }}>
+export function CoreScreen({ title, variant, onBack, scheme, children, onRefresh, refreshing = false }: { title: string; variant?: CoreVariant; onBack: () => void; scheme: Scheme; children: ReactNode; onRefresh?: () => void; refreshing?: boolean }) {
+  return <ScrollView style={{ flex: 1, backgroundColor: colors[scheme].background }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 122 }} refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors[scheme].text} /> : undefined}>
     <CoreHeader title={title} variant={variant} onBack={onBack} scheme={scheme} />
-    <View style={{ paddingHorizontal: 20, paddingTop: 10, gap: 18 }}>{children}</View>
+    <View style={{ width: '100%', maxWidth: 900, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 10, gap: 18 }}>{children}</View>
   </ScrollView>;
 }
 
@@ -95,7 +96,9 @@ export function CoreSegment({ options, value, onChange, scheme }: { options: { l
 
 export function CoreField({ label, value, onChangeText, placeholder, scheme, keyboardType }: { label: string; value: string; onChangeText: (value: string) => void; placeholder?: string; scheme: Scheme; keyboardType?: 'default' | 'decimal-pad' }) {
   const c = colors[scheme];
-  return <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 58, borderBottomWidth: 1, borderBottomColor: c.border, gap: 12 }}><Text style={{ width: 100, color: c.text, fontSize: 14, fontWeight: '700' }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={c.muted} keyboardType={keyboardType ?? 'default'} style={{ flex: 1, minWidth: 0, color: c.text, fontSize: 16, minHeight: 52, paddingVertical: 10 }} /></View>;
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width < 360 || fontScale > 1.25;
+  return <View style={{ flexDirection: stacked ? 'column' : 'row', alignItems: stacked ? 'stretch' : 'center', minHeight: 58, borderBottomWidth: 1, borderBottomColor: c.border, gap: stacked ? 2 : 12, paddingVertical: stacked ? 6 : 0 }}><Text style={{ width: stacked ? undefined : 100, color: c.text, fontSize: 14, fontWeight: '700' }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={c.muted} keyboardType={keyboardType ?? 'default'} style={{ flex: 1, minWidth: 0, color: c.text, fontSize: 16, minHeight: 52, paddingVertical: 10 }} /></View>;
 }
 
 export function CoreSwitchRow({ title, detail, value, onChange, scheme }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; scheme: Scheme }) {

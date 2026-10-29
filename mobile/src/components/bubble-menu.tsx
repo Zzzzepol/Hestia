@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +18,7 @@ const entries: { tab: NavTab; icon: keyof typeof Ionicons.glyphMap }[] = [
   { tab: 'Home', icon: 'home-outline' },
   { tab: 'Items', icon: 'cube-outline' },
   { tab: 'Requests', icon: 'chatbox-outline' },
+  { tab: 'Reminders', icon: 'notifications-outline' },
   { tab: 'Space', icon: 'people-outline' },
   { tab: 'Profile', icon: 'person-outline' },
 ];
@@ -67,10 +68,12 @@ export function BubbleMenu({ activeTab, onSelect, onOpenChange, home }: { active
       <Animated.View style={[{ position: 'absolute', width: diameter, height: diameter, borderRadius: diameter / 2, left: (width - diameter) / 2, top: centerY - diameter / 2, backgroundColor: overlay }, circle]} />
       <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 32, paddingBottom: 114 }, menu]}>
         {height > 640 && <BrandWordmark width={172} style={{ position: 'absolute', top: insets.top + 38, borderRadius: 7 }} />}
-        <View style={{ width: '100%', maxWidth: 310, borderRadius: 27, backgroundColor: cream, padding: 6 }}>
-          {entries.map(({ tab, icon }) => <Pressable key={tab} accessibilityRole="button" accessibilityLabel={tab} accessibilityState={{ selected: activeTab === tab }} onPress={() => select(tab)} style={({ pressed }) => ({ minHeight: 55, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 17, paddingHorizontal: 18, backgroundColor: activeTab === tab ? plum : pressed ? '#E7DAD4' : 'transparent' })}><Ionicons name={icon} size={21} color={activeTab === tab ? cream : plum} /><Text style={{ color: activeTab === tab ? cream : plum, fontSize: 17, fontWeight: '700' }}>{tab}</Text></Pressable>)}
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Add item" onPress={() => select('Add')} style={({ pressed }) => ({ marginTop: 11, width: '100%', maxWidth: 310, minHeight: 58, borderRadius: 32, backgroundColor: gold, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, opacity: pressed ? .8 : 1 })}><Ionicons name="add" size={26} color={plum} /><Text style={{ color: plum, fontSize: 18, fontWeight: '700' }}>Add item</Text></Pressable>
+        <ScrollView style={{ width: '100%', maxWidth: 310, maxHeight: Math.max(180, height - insets.top - 130), flexGrow: 0 }} contentContainerStyle={{ gap: 11, paddingBottom: 4 }} showsVerticalScrollIndicator={false}>
+          <View style={{ borderRadius: 27, backgroundColor: cream, padding: 6 }}>
+            {entries.map(({ tab, icon }) => <Pressable key={tab} accessibilityRole="button" accessibilityLabel={tab} accessibilityState={{ selected: activeTab === tab }} onPress={() => select(tab)} style={({ pressed }) => ({ minHeight: 55, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 17, paddingHorizontal: 18, backgroundColor: activeTab === tab ? plum : pressed ? '#E7DAD4' : 'transparent' })}><Ionicons name={icon} size={21} color={activeTab === tab ? cream : plum} /><Text style={{ color: activeTab === tab ? cream : plum, fontSize: 17, fontWeight: '700' }}>{tab}</Text></Pressable>)}
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Add item" onPress={() => select('Add')} style={({ pressed }) => ({ minHeight: 58, borderRadius: 32, backgroundColor: gold, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, opacity: pressed ? .8 : 1 })}><Ionicons name="add" size={26} color={plum} /><Text style={{ color: plum, fontSize: 18, fontWeight: '700' }}>Add item</Text></Pressable>
+        </ScrollView>
       </Animated.View>
     </View>
     <Pressable accessibilityRole="button" accessibilityLabel={open ? 'Close menu' : 'Open menu'} accessibilityState={{ expanded: open }} onPress={toggle} style={{ position: 'absolute', bottom: bubbleBottom, left: '50%', marginLeft: -34, width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: gold, backgroundColor: plum, alignItems: 'center', justifyContent: 'center', shadowColor: '#1C1020', shadowOpacity: .28, shadowRadius: 16, shadowOffset: { width: 0, height: 11 }, elevation: 9 }}>

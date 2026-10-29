@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { BlurView } from 'expo-blur';
 import { ReactNode, useEffect, useState } from 'react';
-import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import { base, colors, spacing, statusMeta, type Scheme, typeScale } from '@/theme/colors';
 import type { Item } from '@/types';
@@ -23,7 +24,21 @@ export function ItemCard({ item, scheme, onPress, status }: { item: Item; scheme
   const [failedUri, setFailedUri] = useState<string | null>(null);
   return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${item.name}, ${item.location}, ${status}`} style={({ pressed }) => [styles.card, { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? .75 : 1 }]}><View style={[styles.photo, { backgroundColor: c.surfaceAlt }]}>{item.photoUri && failedUri !== item.photoUri ? <Image source={{ uri: item.photoUri }} onError={() => setFailedUri(item.photoUri ?? null)} style={styles.photo} /> : <Ionicons name={item.kind === 'consumable' ? 'basket-outline' : 'cube-outline'} color={c.muted} size={28} />}</View><View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={[styles.cardTitle, { color: c.text }]} numberOfLines={2}>{item.name}</Text><Text style={{ color: c.muted, fontSize: typeScale.label }} numberOfLines={2}>{item.category} · {item.location}</Text><Chip label={status} scheme={scheme} status={status in statusMeta ? status as keyof typeof statusMeta : undefined} /></View><Ionicons name="chevron-forward" size={18} color={c.muted} /></Pressable>;
 }
-export function Sheet({ visible, title, scheme, onClose, children }: { visible: boolean; title: string; scheme: Scheme; onClose: () => void; children: ReactNode }) { const c = colors[scheme]; const reduced = useReducedMotion(); return <Modal visible={visible} transparent animationType={reduced ? 'none' : 'slide'} onRequestClose={onClose}><View style={styles.scrim}>{Platform.OS !== 'android' && <BlurView intensity={20} tint={scheme} pointerEvents="none" style={StyleSheet.absoluteFill} />}<Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close sheet" /><View style={[styles.sheet, { backgroundColor: c.surface }]}><View style={[styles.grabber, { backgroundColor: c.border }]} /><View style={styles.sheetHeading}><Text style={[styles.title, { color: c.text }]}>{title}</Text><Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}><Ionicons name="close" size={24} color={c.text} /></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}>{children}</ScrollView></View></View></Modal>; }
+export function Sheet({ visible, title, scheme, onClose, children }: { visible: boolean; title: string; scheme: Scheme; onClose: () => void; children: ReactNode }) {
+  const c = colors[scheme]; const reduced = useReducedMotion(); const insets = useSafeAreaInsets(); const { width, height } = useWindowDimensions();
+  const wide = width >= 700;
+  return <Modal visible={visible} transparent animationType={reduced ? 'none' : wide ? 'fade' : 'slide'} onRequestClose={onClose}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.scrim, { justifyContent: wide ? 'center' : 'flex-end' }]}>
+      {Platform.OS !== 'android' && <BlurView intensity={20} tint={scheme} pointerEvents="none" style={StyleSheet.absoluteFill} />}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sheet" />
+      <View style={[styles.sheet, { width: '100%', maxWidth: wide ? 560 : undefined, alignSelf: 'center', maxHeight: height * .88, borderRadius: wide ? 28 : undefined, backgroundColor: c.surface, paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <View style={[styles.grabber, { backgroundColor: c.border }]} />
+        <View style={styles.sheetHeading}><Text accessibilityRole="header" style={[styles.title, { color: c.text, flex: 1 }]}>{title}</Text><Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}><Ionicons name="close" size={24} color={c.text} /></Pressable></View>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}>{children}</ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  </Modal>;
+}
 export function EmptyState({ title, body, action, onPress, scheme }: { title: string; body: string; action: string; onPress: () => void; scheme: Scheme }) { const c = colors[scheme]; return <View style={styles.empty}><Ionicons name="leaf-outline" size={34} color={c.text} /><Text style={[styles.title, { color: c.text, textAlign: 'center' }]}>{title}</Text><Text style={{ color: c.muted, textAlign: 'center', fontSize: typeScale.body }}>{body}</Text><Button label={action} onPress={onPress} scheme={scheme} kind="secondary" /></View>; }
 export function Skeleton({ scheme }: { scheme: Scheme }) {
   const c = colors[scheme];

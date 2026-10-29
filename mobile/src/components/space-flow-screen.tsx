@@ -42,7 +42,7 @@ export function SpaceFlowScreen(props: Props) {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, paddingBottom: 22 }}>
         <CoreHeader title={create ? 'New Space' : 'Join a Space'} variant={create ? 'new-space' : 'join-space'} scheme={props.scheme} onBack={props.onBack} />
-        <Animated.View key={props.mode} entering={FadeIn.duration(reduced ? 80 : 170)} style={{ flex: 1, paddingHorizontal: 20, paddingTop: 12, gap: 20 }}>
+        <Animated.View key={props.mode} entering={FadeIn.duration(reduced ? 80 : 170)} style={{ flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 12, gap: 20 }}>
           {create ? <>
             <View style={{ flexDirection: 'row', minHeight: 58, borderBottomWidth: nameError ? 1.5 : 1, borderColor: nameError ? c.danger : c.border, alignItems: 'center', gap: 16 }}>
               <Text style={{ color: c.text, fontSize: 15, fontWeight: '700' }}>Space name</Text>
@@ -75,7 +75,7 @@ export function SpaceFlowScreen(props: Props) {
           {props.spaces.length > 0 && <View style={{ gap: 8, marginTop: 12 }}><Text style={{ color: c.text, fontSize: 15, fontWeight: '700' }}>Your other Spaces</Text>{props.spaces.map(space => <Pressable key={space.id} accessibilityRole="button" accessibilityLabel={`Open ${space.name}`} onPress={() => props.onSwitch(space.id)} style={({ pressed }) => ({ minHeight: 50, flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface, borderRadius: 14, paddingHorizontal: 14, opacity: pressed ? .7 : 1 })}><Ionicons name="home-outline" size={19} color={c.text} /><Text numberOfLines={1} style={{ color: c.text, fontWeight: '700', marginLeft: 11, flex: 1 }}>{space.name}</Text><Ionicons name="chevron-forward" size={18} color={c.muted} /></Pressable>)}</View>}
         </Animated.View>
       </ScrollView>
-      <View style={{ backgroundColor: c.background, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, gap: 11 }}>
+      <View style={{ width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: c.background, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, gap: 11 }}>
         <Button label={invalidCode ? 'Try another code' : action} scheme={props.scheme} disabled={props.pending || props.previewing || (!create && !invalidCode && !validCode)} onPress={invalidCode ? () => props.onCode('') : create ? () => { setNameAttempted(true); if (validName) props.onSubmit(); } : props.preview ? props.onSubmit : props.onPreview} />
         <Pressable accessibilityRole="button" accessibilityLabel={create ? 'Join a Space instead' : 'Create a Space instead'} onPress={() => { setNameAttempted(false); props.onMode(create ? 'join' : 'create'); }} style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: c.text, fontSize: 14 }}>{create ? 'Have a code? ' : 'No code? '}<Text style={{ fontWeight: '700', textDecorationLine: 'underline' }}>{create ? 'Join instead' : 'Create a Space instead'}</Text></Text></Pressable>
       </View>
